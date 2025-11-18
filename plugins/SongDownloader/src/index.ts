@@ -26,6 +26,8 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 		if (downloadButton.elem === undefined) return;
 		const downloadFolder = settings.defaultPath ?? (trackCount > 1 ? await getDownloadFolder() : undefined);
 		downloadButton.elem.classList.add("download-button");
+
+		let currentIndex = 1;
 		for await (let mediaItem of await mediaCollection.mediaItems()) {
 			if (settings.useRealMAX) {
 				downloadButton.text = `Checking RealMax...`;
@@ -56,7 +58,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					const downloadedMB = (downloaded / 1048576).toFixed(0);
 					const totalMB = (total / 1048576).toFixed(0);
 					downloadButton.elem!.innerHTML = `
-      					<div>Downloading... ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%</div>
+      					<div>Downloading track {currentIndex}/${trackCount}... ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%</div>
       					<div style="font-size: 0.8em; color: #fff;">${simpleFileName}</div>
     				`;
 				},
@@ -64,6 +66,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			);
 			await mediaItem.download(path, settings.downloadQuality);
 			clearInterval();
+			currentIndex++;
 		}
 		downloadButton.text = defaultText;
 		downloadButton.elem.classList.remove("download-button");
