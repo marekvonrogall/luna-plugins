@@ -33,10 +33,10 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			}
 
 			downloadButton.text = `Loading tags...`;
-			await mediaItem.flacTags();
-			const artist = mediaItem.tags?.artist ?? "Unknown Artist";
-    		const title = mediaItem.tags?.title ?? "Unknown Title";
-    		const prettyName = `${artist} - ${title}`;
+			const tags = await mediaItem.flacTags();
+			const artist = tags?.artist ?? "Unknown Artist";
+			const title = tags?.title ?? "Unknown Title";
+			const prettyName = `${artist} - ${title}`;
 
 			downloadButton.text = `Fetching filename...`;
 			const fileName = await getFileName(mediaItem);
