@@ -34,9 +34,6 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 
 			downloadButton.text = `Loading tags...`;
 			const tags = await mediaItem.flacTags();
-			const artist = Array.isArray(tags.artist) ? tags.artist[0] : tags.artist ?? "Unknown Artist";
-            const title = Array.isArray(tags.title) ? tags.title[0] : tags.title ?? "Unknown Title";
-            const prettyName = `${artist} - ${title}`;
 
 			downloadButton.text = `Fetching filename...`;
 			const fileName = await getFileName(mediaItem);
@@ -57,7 +54,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					downloadButton.elem!.style.setProperty("--progress", `${percent}%`);
 					const downloadedMB = (downloaded / 1048576).toFixed(0);
 					const totalMB = (total / 1048576).toFixed(0);
-					downloadButton.text = `${prettyName} ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%`;
+					downloadButton.text = `${fileName} ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%`;
 				},
 				50
 			);
