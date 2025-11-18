@@ -55,7 +55,10 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					downloadButton.elem!.style.setProperty("--progress", `${percent}%`);
 					const downloadedMB = (downloaded / 1048576).toFixed(0);
 					const totalMB = (total / 1048576).toFixed(0);
-					downloadButton.text = `${simpleFileName} ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%`;
+					downloadButton.elem!.innerHTML = `
+      					<div>Downloading... ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%</div>
+      					<div style="font-size: 0.8em; color: #fff;">${simpleFileName}</div>
+    				`;
 				},
 				50
 			);

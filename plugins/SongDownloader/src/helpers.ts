@@ -38,6 +38,6 @@ export const getSimpleFileName = async (mediaItem: MediaItem) => {
   artist = artist ? sanitize(artist) : 'UnknownArtist';
   title = title ? sanitize(title) : 'UnknownTitle';
 
-  return `${artist}-${title}`;
+  return `${artist} - ${title}`;
 };
 

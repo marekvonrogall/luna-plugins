@@ -1,11 +1,11 @@
 {
-	"name": "Song Downloader",
+	"name": "Song Downloader (song name preview)",
 	"description": "Download tidal songs as FLAC files.",
-	"homepage": "https://github.com/Inrixia/luna-plugins#SongDownloader",
+	"homepage": "https://github.com/marekvonrogall/luna-plugins#SongDownloader",
 	"author": {
 		"name": "Inrixia",
-		"url": "https://github.com/Inrixia",
-		"avatarUrl": "https://2.gravatar.com/avatar/eeaffef9eb9b436dccc58c6c44c9fe8c3528e83e3bf64e1c736a68dbe8c097d3"
+		"url": "https://github.com/marekvonrogall",
+		"avatarUrl": "https://avatars.githubusercontent.com/u/110893394"
 	},
 	"main": "./src/index.ts",
 	"dependencies": {
