@@ -3,7 +3,7 @@ import { ContextMenu, safeInterval, StyleTag } from "@luna/lib";
 
 import { join } from "path";
 
-import { getDownloadFolder, getDownloadPath, getFileName } from "./helpers";
+import { getDownloadFolder, getDownloadPath, getFileName, getSimpleFileName } from "./helpers";
 import { settings } from "./Settings";
 
 import styles from "file://downloadButton.css?minify";
@@ -37,6 +37,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 
 			downloadButton.text = `Fetching filename...`;
 			const fileName = await getFileName(mediaItem);
+			const simpleFileName = await getSimpleFileName(mediaItem);
 
 			downloadButton.text = `Fetching download path...`;
 			const path = downloadFolder !== undefined ? join(downloadFolder, fileName) : await getDownloadPath(fileName);
@@ -54,7 +55,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					downloadButton.elem!.style.setProperty("--progress", `${percent}%`);
 					const downloadedMB = (downloaded / 1048576).toFixed(0);
 					const totalMB = (total / 1048576).toFixed(0);
-					downloadButton.text = `${fileName} ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%`;
+					downloadButton.text = `${simpleFileName} ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%`;
 				},
 				50
 			);

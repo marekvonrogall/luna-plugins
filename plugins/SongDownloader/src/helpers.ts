@@ -26,3 +26,18 @@ export const getFileName = async (mediaItem: MediaItem) => {
 	}
 	return fileName;
 };
+export const getSimpleFileName = async (mediaItem: MediaItem) => {
+  const { tags } = await mediaItem.flacTags();
+
+  let artist = tags.artist;
+  let title = tags.title;
+
+  if (Array.isArray(artist)) artist = artist[0];
+  if (Array.isArray(title)) title = title[0];
+
+  artist = artist ? sanitize(artist) : 'UnknownArtist';
+  title = title ? sanitize(title) : 'UnknownTitle';
+
+  return `${artist}-${title}`;
+};
+
