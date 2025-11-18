@@ -30,22 +30,28 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 		let currentIndex = 1;
 		for await (let mediaItem of await mediaCollection.mediaItems()) {
 			if (settings.useRealMAX) {
-				downloadButton.text = `Checking RealMax...`;
+				downloadButton.text = `Checking RealMax... (${currentIndex}/${trackCount})`;
 				mediaItem = (await mediaItem.max()) ?? mediaItem;
 			}
 
-			downloadButton.text = `Loading tags...`;
+			downloadButton.text = `Loading tags... (${currentIndex}/${trackCount})`;
 			const tags = await mediaItem.flacTags();
 
-			downloadButton.text = `Fetching filename...`;
+			downloadButton.text = `Fetching filename... (${currentIndex}/${trackCount})`;
 			const fileName = await getFileName(mediaItem);
 			const simpleFileName = await getSimpleFileName(mediaItem);
 
-			downloadButton.text = `Fetching download path...`;
+			downloadButton.elem!.innerHTML = `
+      			<div>Fetching download path... (${currentIndex}/${trackCount})</div>
+      			<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
+    		`;
 			const path = downloadFolder !== undefined ? join(downloadFolder, fileName) : await getDownloadPath(fileName);
 			if (path === undefined) return;
 
-			downloadButton.text = `Downloading...`;
+			downloadButton.elem!.innerHTML = `
+      			<div>Downloading... (${currentIndex}/${trackCount})</div>
+      			<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
+    		`;
 			const clearInterval = safeInterval(
 				unloads,
 				async () => {
@@ -58,7 +64,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					const downloadedMB = (downloaded / 1048576).toFixed(0);
 					const totalMB = (total / 1048576).toFixed(0);
 					downloadButton.elem!.innerHTML = `
-      					<div>Downloading track ${currentIndex}/${trackCount}... ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%</div>
+      					<div>Downloading... (${currentIndex}/${trackCount}) - ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%</div>
       					<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
     				`;
 				},
