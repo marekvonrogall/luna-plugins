@@ -12,3 +12,7 @@ Shows which track is currently downloading:
 <img width="239" height="393" alt="image" src="https://github.com/user-attachments/assets/69d3b961-51f8-4efc-ab38-229b19827fb1" />
 
 *Left: Old version, Right: New version*
+
+**Install the plugin by adding my store to TidaLuna!**
+
+Luna Settings > Plugin Store > Install from URL > "https://github.com/marekvonrogall/luna-plugins/releases/download/latest/store.json"
