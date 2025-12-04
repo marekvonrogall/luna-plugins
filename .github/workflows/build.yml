@@ -1,6 +1,9 @@
 name: "Validate & Build"
 
 on:
+ pull_request:
+  branches:
+  - master
  workflow_call:
 
 jobs:
