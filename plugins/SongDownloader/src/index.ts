@@ -1,8 +1,6 @@
 import { Tracer, type LunaUnload } from "@luna/core";
 import { ContextMenu, safeInterval, StyleTag } from "@luna/lib";
 
-import { join } from "path";
-
 import { getDownloadFolder, getDownloadPath, getFileName, getSimpleFileName } from "./helpers";
 import { settings } from "./Settings";
 
@@ -35,17 +33,17 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			}
 
 			downloadButton.text = `Loading tags... (${currentIndex}/${trackCount})`;
-			const tags = await mediaItem.flacTags();
+			const { tags } = await mediaItem.flacTags();
 
 			downloadButton.text = `Fetching filename... (${currentIndex}/${trackCount})`;
-			const fileName = await getFileName(mediaItem);
+			const fileName = await getFileName(mediaItem, settings.downloadQuality);
 			const simpleFileName = await getSimpleFileName(mediaItem);
 
 			downloadButton.elem!.innerHTML = `
       			<div>Fetching download path... (${currentIndex}/${trackCount})</div>
       			<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
     		`;
-			const path = downloadFolder !== undefined ? join(downloadFolder, fileName) : await getDownloadPath(fileName);
+			const path = downloadFolder !== undefined ? [downloadFolder, fileName] : await getDownloadPath(fileName);
 			if (path === undefined) return;
 
 			downloadButton.elem!.innerHTML = `
@@ -68,9 +66,9 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
       					<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
     				`;
 				},
-				50
+				50,
 			);
-			await mediaItem.download(path, settings.downloadQuality);
+			await mediaItem.download(path, settings.downloadQuality).catch(trace.msg.err.withContext(`Failed to download ${tags.title}`));
 			clearInterval();
 			currentIndex++;
 		}
