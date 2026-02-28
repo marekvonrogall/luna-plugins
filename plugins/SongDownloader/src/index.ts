@@ -1,8 +1,9 @@
 import { Tracer, type LunaUnload } from "@luna/core";
 import { ContextMenu, safeInterval, StyleTag } from "@luna/lib";
 
-import { getDownloadFolder, getDownloadPath, getFileName, getSimpleFileName } from "./helpers";
+import { getDownloadFolder, getDownloadPath, getFastLookupInfo, getResolvedFileInfo } from "./helpers";
 import { settings } from "./Settings";
+import { addSongToCache, hasSongInCache, hasSongStemInCache, refreshSongCache } from "./songCache";
 
 import styles from "file://downloadButton.css?minify";
 
@@ -22,34 +23,57 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 
 	downloadButton.onClick(async () => {
 		if (downloadButton.elem === undefined) return;
-		const downloadFolder = settings.defaultPath ?? (trackCount > 1 ? await getDownloadFolder() : undefined);
+		const downloadFolder = settings.defaultPath ?? await getDownloadFolder() ?? undefined;
 		downloadButton.elem.classList.add("download-button");
 
-		let currentIndex = 1;
+		type PreparedTrack = {
+			mediaItem: Awaited<ReturnType<(typeof mediaCollection)["mediaItems"]>> extends AsyncIterable<infer T> ? T : never;
+			relativePathStem: string;
+			simpleFileName: string;
+			title: string;
+		};
+
+		const preparedTracks: PreparedTrack[] = [];
+		let skippedExisting = 0;
+		let downloadedMissing = 0;
+
+		
+		if (downloadFolder !== undefined) {
+			downloadButton.text = "Scanning library...";
+			await refreshSongCache(downloadFolder);
+		}
+		downloadButton.elem!.style.setProperty("--progress", `${0}%`);
+		downloadButton.text = `Fetching selected tracks... (0/${trackCount})`;
 		for await (let mediaItem of await mediaCollection.mediaItems()) {
-			if (settings.useRealMAX) {
-				downloadButton.text = `Checking RealMax... (${currentIndex}/${trackCount})`;
-				mediaItem = (await mediaItem.max()) ?? mediaItem;
+			const { relativePathStem, simpleFileName, title } = getFastLookupInfo(mediaItem);
+			if (downloadFolder !== undefined && hasSongStemInCache(downloadFolder, relativePathStem)) {
+				skippedExisting++;
+			}
+			else preparedTracks.push({ mediaItem, relativePathStem, simpleFileName, title });
+			downloadButton.text = `Fetching selected tracks... (${preparedTracks.length+skippedExisting}/${trackCount})`;
+			downloadButton.elem!.style.setProperty("--progress", `${((preparedTracks.length + skippedExisting) / trackCount) * 100}%`);
+		}
+
+		let currentIndex = 1;
+		const totalToDownload = preparedTracks.length;
+		for (const preparedTrack of preparedTracks) {
+			let mediaItem = preparedTrack.mediaItem;
+			if (settings.useRealMAX) mediaItem = (await mediaItem.max()) ?? mediaItem;
+			const { fileName, simpleFileName, tags } = await getResolvedFileInfo(mediaItem, settings.downloadQuality);
+
+			if (downloadFolder !== undefined && hasSongInCache(downloadFolder, fileName)) {
+				skippedExisting++;
+				currentIndex++;
+				continue;
 			}
 
-			downloadButton.text = `Loading tags... (${currentIndex}/${trackCount})`;
-			const { tags } = await mediaItem.flacTags();
-
-			downloadButton.text = `Fetching filename... (${currentIndex}/${trackCount})`;
-			const fileName = await getFileName(mediaItem, settings.downloadQuality);
-			const simpleFileName = await getSimpleFileName(mediaItem);
-
 			downloadButton.elem!.innerHTML = `
-      			<div>Fetching download path... (${currentIndex}/${trackCount})</div>
+      			<div>Fetching download path... (${currentIndex}/${totalToDownload})</div>
       			<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
     		`;
 			const path = downloadFolder !== undefined ? [downloadFolder, fileName] : await getDownloadPath(fileName);
 			if (path === undefined) return;
 
-			downloadButton.elem!.innerHTML = `
-      			<div>Downloading... (${currentIndex}/${trackCount})</div>
-      			<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
-    		`;
 			const clearInterval = safeInterval(
 				unloads,
 				async () => {
@@ -57,22 +81,32 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					if (progress === undefined) return;
 					const { total, downloaded } = progress;
 					if (total === undefined || downloaded === undefined) return;
-					const percent = (downloaded / total) * 100;
+					const percent = total > 0 ? (downloaded / total) * 100 : 0
 					downloadButton.elem!.style.setProperty("--progress", `${percent}%`);
 					const downloadedMB = (downloaded / 1048576).toFixed(0);
 					const totalMB = (total / 1048576).toFixed(0);
 					downloadButton.elem!.innerHTML = `
-      					<div>Downloading... (${currentIndex}/${trackCount}) - ${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%</div>
+      					<div>Downloading ${currentIndex}/${totalToDownload} (${downloadedMB}/${totalMB}MB ${percent.toFixed(0)}%)</div>
       					<div style="font-size: 0.9em; color: #fff;">${simpleFileName}</div>
     				`;
 				},
 				50,
 			);
-			await mediaItem.download(path, settings.downloadQuality).catch(trace.msg.err.withContext(`Failed to download ${tags.title}`));
+
+			const downloadCompleted = await mediaItem
+				.download(path, settings.downloadQuality)
+				.then(() => true)
+				.catch(trace.msg.err.withContext(`Failed to download ${tags.title ?? preparedTrack.title}`));
 			clearInterval();
+			if (downloadFolder !== undefined && downloadCompleted === true) {
+				downloadedMissing++;
+				addSongToCache(downloadFolder, fileName);
+			}
 			currentIndex++;
 		}
-		downloadButton.text = defaultText;
+
+		downloadButton.text = skippedExisting > 0 ? `Downloaded ${downloadedMissing}/${trackCount} tracks (Skipped ${skippedExisting})` : defaultText;
+		downloadButton.elem.style.setProperty("--progress", "0%");
 		downloadButton.elem.classList.remove("download-button");
 	});
 
