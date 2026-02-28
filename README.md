@@ -2,16 +2,24 @@
 
 Plugins for [TidaLuna Client](https://github.com/Inrixia/TidaLuna) forked from [Inrixia](https://github.com/Inrixia).
 
-### Contains a modified version of the Song Downloader plugin.
-Shows which track is currently downloading:
- - Displays its position in the queue
- - Shows the artist and track name
+## Song Downloader
 
-<img width="241" height="377" alt="image" src="https://github.com/user-attachments/assets/18b8268d-8a1b-48ac-836f-8e5925c925a5" />
+This repo contains an enhanced version of the SongDownloader plugin.
 
-<img width="239" height="393" alt="image" src="https://github.com/user-attachments/assets/69d3b961-51f8-4efc-ab38-229b19827fb1" />
+### New features
+- Live download status in the context menu button:
+	- Current track index in queue (e.g. `3/14`)
+	- Artist + track label for the active download
+- Smart skip logic for existing files:
+	- Scans your selected download folder once
+	- Skips tracks already present in your library
+	- Shows a final summary with downloaded vs skipped
 
-*Left: Old version, Right: New version*
+### Preview
+
+<img width="241" height="396" alt="Screenshot 2026-02-28 183205" src="https://github.com/user-attachments/assets/8acac7ba-dc8e-484a-8be8-17c7957bad7a" />
+
+### Installation
 
 **Install the plugin by adding my store to TidaLuna!**
 
