@@ -19,7 +19,17 @@ This repo contains an enhanced version of the SongDownloader plugin.
 
 <img width="241" height="396" alt="Screenshot 2026-02-28 183205" src="https://github.com/user-attachments/assets/8acac7ba-dc8e-484a-8be8-17c7957bad7a" />
 
-### Installation
+## Collector
+
+Right-click a playlist, an album, a single song or a selection of songs and choose **Collect**.
+
+- Pick one of your playlists from a searchable list
+- For every selected song, the whole album it belongs to is added to that playlist
+- Songs already in the target playlist are skipped
+- Each album is only fetched once, even if several selected songs come from it
+- Progress toast with a cancel button, summary notification when done
+
+## Installation
 
 **Install the plugin by adding my store to TidaLuna!**
 
