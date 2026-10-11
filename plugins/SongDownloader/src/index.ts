@@ -3,6 +3,8 @@ import { ContextMenu, MediaItems, Playlist, safeInterval, StyleTag, type MediaCo
 
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { addProgressToastStyles, ProgressToast } from "../../../shared/progressToast";
+import { downloadTrack, getDownloadProgress } from "./download.native";
+import { getFreshPlaybackInfo } from "./playbackInfo";
 import { getDownloadFolder, getDownloadPath, getFastLookupInfo, getResolvedFileInfo } from "./helpers";
 import { settings } from "./Settings";
 import { addSongToCache, hasSongInCache, hasSongStemInCache, refreshSongCache, renameSongInCache } from "./songCache";
@@ -118,7 +120,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 				const clearInterval = safeInterval(
 					unloads,
 					async () => {
-						const progress = await mediaItem.downloadProgress();
+						const progress = await getDownloadProgress(String(mediaItem.id));
 						if (progress === undefined) return;
 						const { total, downloaded } = progress;
 						if (total === undefined || downloaded === undefined) return;
@@ -140,10 +142,13 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 					50,
 				);
 
-				const downloadCompleted = await mediaItem
-					.download(path, settings.downloadQuality)
-					.then(() => true)
-					.catch(trace.msg.err.withContext(`Failed to download ${tags.title ?? preparedTrack.title}`));
+				// Own download instead of mediaItem.download(): fresh links (Luna's expire → 403) and no crash on stream errors
+				const downloadCompleted = await (async () => {
+					const playbackInfo = await getFreshPlaybackInfo(mediaItem.id, settings.downloadQuality);
+					if (playbackInfo === undefined) throw new Error(`Track ${mediaItem.id} is not available`);
+					await downloadTrack(String(mediaItem.id), playbackInfo, path, await mediaItem.flacTags());
+					return true;
+				})().catch(trace.msg.err.withContext(`Failed to download ${tags.title ?? preparedTrack.title}`));
 				clearInterval();
 				if (downloadCompleted === true) downloaded++;
 				if (downloadFolder !== undefined && downloadCompleted === true) {
