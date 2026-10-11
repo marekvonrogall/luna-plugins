@@ -40,6 +40,38 @@ export const getUserPlaylists = async (): Promise<PickablePlaylist[]> => {
 		.sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""));
 };
 
+/** All items of an album, in album order */
+export const getAlbumItems = async (albumId: string): Promise<redux.MediaItem[]> => {
+	const items: redux.MediaItem[] = [];
+	for (let offset = 0; ; ) {
+		const res = await request(withQuery(`albums/${albumId}/items`, `&limit=100&offset=${offset}`));
+		if (!res.ok) throw failed("Failed to load the album", res);
+		const page = (await res.json()) as { items?: redux.MediaItem[]; totalNumberOfItems?: number };
+		const pageItems = page.items ?? [];
+		items.push(...pageItems);
+		offset += pageItems.length;
+		if (pageItems.length === 0 || offset >= (page.totalNumberOfItems ?? 0)) break;
+	}
+	return items;
+};
+
+/** All favorited (hearted) tracks, as media items */
+export const getFavoriteTrackItems = async (): Promise<redux.MediaItem[]> => {
+	const userId = redux.store.getState().session?.userId;
+	if (userId === undefined || userId === null) throw new Error("Not logged in");
+	const items: redux.MediaItem[] = [];
+	for (let offset = 0; ; ) {
+		const res = await request(withQuery(`users/${userId}/favorites/tracks`, `&limit=1000&offset=${offset}`));
+		if (!res.ok) throw failed("Failed to load your favorite tracks", res);
+		const page = (await res.json()) as { items?: { item: redux.Track }[]; totalNumberOfItems?: number };
+		const pageItems = page.items ?? [];
+		items.push(...pageItems.map(({ item }) => ({ type: "track" as const, item })));
+		offset += pageItems.length;
+		if (pageItems.length === 0 || offset >= (page.totalNumberOfItems ?? 0)) break;
+	}
+	return items;
+};
+
 /** Track ids in a playlist (fresh) */
 export const getPlaylistTrackIds = async (uuid: string) => new Set((await fetchPlaylistItems(uuid)).map((i) => String(i.item.id)));
 

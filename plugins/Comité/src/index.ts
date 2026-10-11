@@ -3,6 +3,8 @@ import { MediaItem, observe, StyleTag } from "@luna/lib";
 import { addPlaylistPickerStyles, pickPlaylist } from "../../../shared/playlistPicker";
 import { getUserPlaylists } from "./api";
 import { trace, unloads } from "./core";
+import { RATE_MODE_CSS, startRatingMode } from "./rateMode";
+import { FAVORITES_RATE_CSS, setupRateButton } from "./rateButton";
 import { applyRating, loadRating, ratingListeners, ratingOf, refreshRatings, refreshRatingsIfStale } from "./ratings";
 import { getRatingPlaylist, RATINGS, setRatingPlaylist, stars } from "./store";
 
@@ -31,6 +33,7 @@ new StyleTag(
 `,
 );
 addPlaylistPickerStyles("Comité", unloads);
+new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS);
 
 let currentTrackId: string | undefined;
 let currentRating = 0;
@@ -164,6 +167,7 @@ ratingListeners.add(() => {
 	render();
 });
 
+setupRateButton(unloads, startRatingMode);
 observe(unloads, "#footerPlayer", loadComité);
 loadComité();
 MediaItem.onMediaTransition(unloads, onTrack);
