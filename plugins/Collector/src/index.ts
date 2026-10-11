@@ -21,7 +21,8 @@ import {
 } from "./api";
 import { setupFavoritesButton } from "./favorites";
 import { OverflowError, PlaylistChain } from "./chain";
-import { pickArtists, pickTarget, ProgressToast, type TargetChoice } from "./ui";
+import { addProgressToastStyles, ProgressToast } from "../../../shared/progressToast";
+import { pickArtists, pickTarget, type TargetChoice } from "./ui";
 
 import styles from "file://styles.css?minify";
 
@@ -29,6 +30,7 @@ export const { trace, errSignal } = Tracer("[Collector]");
 export const unloads = new Set<LunaUnload>();
 
 new StyleTag("Collector", unloads, styles);
+addProgressToastStyles("Collector", unloads);
 
 const BUTTON_TEXT = "Collect";
 const addAlbumsButton = ContextMenu.addButton(unloads);
