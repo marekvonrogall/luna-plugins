@@ -45,12 +45,15 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  plugins/Collector: {}
+  plugins/Comité: {}
 
-  plugins/Categorizer: {}
+  plugins/Collector: {}
 
   plugins/SongDownloader:
     dependencies:
+      flac-stream-tagger:
+        specifier: ^1.0.10
+        version: 1.0.10
       sanitize-filename:
         specifier: ^1.6.3
         version: 1.6.3
@@ -474,6 +477,9 @@ packages:
   fd-slicer@1.1.0:
     resolution: {integrity: sha512-cE1qsB/VwyQozZ+q1dGxR8LBYNZeofhEdUNGSMbQD3Gw2lAzX9Zb3uIU6Ebc/Fmyjo9AWWfnn0AUCHqtevs/8g==}
 
+  flac-stream-tagger@1.0.10:
+    resolution: {integrity: sha512-RqXyWnwx5xGTUuTCxzCCKK085sVxZzVCPwe1LShj1bDAn8zglhYcAPBorL4R0pK6+IIJtJsUuief3AawpNwIjw==}
+
   follow-redirects@1.15.11:
     resolution: {integrity: sha512-deG2P0JfjrTxl50XGCDyfI97ZGVCxIpfKYmfyrQ54n5FO/0gfIES8C/Psl6kWVDolizcaaxZJnTS0QSMxvnsBQ==}
     engines: {node: '>=4.0'}
@@ -584,6 +590,10 @@ packages:
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
+
+  imageinfo@1.0.4:
+    resolution: {integrity: sha512-BJml4q/QCO2187F4UcO/b6hTYIhbq4nnd1XNs65jyCED9em4m6XmeGWDxjewjfJoC7VJABhOdmqb64KA24rLZw==}
+    engines: {node: '>=0.4'}
 
   is-fullwidth-code-point@3.0.0:
     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
@@ -1281,6 +1291,10 @@ snapshots:
     dependencies:
       pend: 1.2.0
 
+  flac-stream-tagger@1.0.10:
+    dependencies:
+      imageinfo: 1.0.4
+
   follow-redirects@1.15.11: {}
 
   fs-extra@8.1.0:
@@ -1428,6 +1442,8 @@ snapshots:
   iconv-lite@0.6.3:
     dependencies:
       safer-buffer: 2.1.2
+
+  imageinfo@1.0.4: {}
 
   is-fullwidth-code-point@3.0.0: {}
 
