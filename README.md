@@ -25,6 +25,10 @@ Right-click a playlist, an album, a single song or a selection of songs and choo
 
 For your favorite (hearted) tracks, use the **...** button next to the title on the Tracks page in My Collection and choose **Collect**.
 
+On an artist page, open the **...** menu and choose **Collect** to add every album, EP and single of that artist.
+
+In My Collection, the **...** menu on the **Albums** tab collects every saved album, and on the **Artists** tab every album, EP and single of every artist you follow.
+
 - Pick one of your playlists from a searchable list
 - For every selected song, the whole album it belongs to is added to that playlist
 - Songs already in the target playlist are skipped

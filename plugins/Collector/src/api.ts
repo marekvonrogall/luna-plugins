@@ -15,6 +15,27 @@ export interface PlaylistInfo {
 export interface SourceTrack {
 	trackId?: string;
 	albumId?: string;
+	trackTitle?: string;
+	artist?: string;
+	albumTitle?: string;
+}
+
+export const toSourceTrack = (track: redux.Track): SourceTrack => ({
+	trackId: String(track.id),
+	albumId: track.album?.id === undefined || track.album?.id === null ? undefined : String(track.album.id),
+	trackTitle: track.title,
+	artist: track.artists?.[0]?.name ?? track.artist?.name,
+	albumTitle: track.album?.title,
+});
+
+export class HttpError extends Error {
+	constructor(
+		public readonly status: number,
+		statusText: string,
+		public readonly url: string,
+	) {
+		super(`${status} ${statusText}`);
+	}
 }
 
 type Paged<T> = { items?: T[]; totalNumberOfItems?: number };
@@ -42,7 +63,7 @@ const request = async (url: string, init: RequestInit = {}, retries = 3): Promis
 
 const getJson = async <T>(url: string): Promise<T> => {
 	const res = await request(url);
-	if (!res.ok) throw new Error(`${res.status} ${res.statusText} @ ${url}`);
+	if (!res.ok) throw new HttpError(res.status, res.statusText, url);
 	return res.json() as Promise<T>;
 };
 
@@ -100,9 +121,58 @@ export const getPlaylistItems = (playlistUUID: string) => fetchAllPages<redux.Me
 /** All favorited (hearted) tracks of the current user */
 export const getFavoriteTracks = async (): Promise<SourceTrack[]> => {
 	const favorites = await fetchAllPages<{ item: redux.Track }>(`users/${getUserId()}/favorites/tracks`, 1000);
+	return favorites.map(({ item }) => toSourceTrack(item));
+};
+
+/** Runs `fn` over `items` with limited concurrency, results keep the input order */
+export const mapLimited = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
+	const results: R[] = new Array(items.length);
+	let next = 0;
+	const worker = async () => {
+		while (next < items.length) {
+			const index = next++;
+			results[index] = await fn(items[index]);
+		}
+	};
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+	return results;
+};
+
+/** Albums saved in My Collection */
+export const getFavoriteAlbums = async (): Promise<SourceTrack[]> => {
+	const favorites = await fetchAllPages<{ item: redux.Album }>(`users/${getUserId()}/favorites/albums`, 1000);
 	return favorites.map(({ item }) => ({
-		trackId: String(item.id),
-		albumId: item.album?.id === undefined || item.album?.id === null ? undefined : String(item.album.id),
+		albumId: String(item.id),
+		albumTitle: item.title,
+		artist: item.artist?.name ?? item.artists?.[0]?.name,
+	}));
+};
+
+/** Artists followed in My Collection */
+export const getFavoriteArtists = async (): Promise<{ id: string; name: string }[]> => {
+	const favorites = await fetchAllPages<{ item: redux.Artist }>(`users/${getUserId()}/favorites/artists`, 1000);
+	return favorites.map(({ item }) => ({ id: String(item.id), name: item.name }));
+};
+
+/** Albums, EPs and singles of an artist ("appears on" compilations excluded), clean/explicit twins merged */
+export const getArtistReleases = async (artistId: string): Promise<SourceTrack[]> => {
+	const [albums, singles] = await Promise.all([
+		fetchAllPages<redux.Album>(`artists/${artistId}/albums`, 100),
+		fetchAllPages<redux.Album>(`artists/${artistId}/albums?filter=EPSANDSINGLES`, 100),
+	]);
+
+	// Same release as clean + explicit version: keep only the explicit one
+	const releases = new Map<string, redux.Album>();
+	for (const album of [...albums, ...singles]) {
+		const key = `${album.title}|${album.version ?? ""}|${album.numberOfTracks}`.toLowerCase();
+		const existing = releases.get(key);
+		if (existing === undefined || (!existing.explicit && album.explicit)) releases.set(key, album);
+	}
+
+	return [...releases.values()].map((album) => ({
+		albumId: String(album.id),
+		albumTitle: album.title,
+		artist: album.artist?.name ?? album.artists?.[0]?.name,
 	}));
 };
 
@@ -112,15 +182,14 @@ export const getAlbumTrackIds = async (albumId: string): Promise<string[]> => {
 	return items.filter((i) => i.type === "track").map((i) => String(i.item.id));
 };
 
-/** Album id of a track, from the redux store or the API */
-export const getTrackAlbumId = async (trackId: string): Promise<string | undefined> => {
+/** Track info incl. album, from the redux store or the API */
+export const getTrackSource = async (trackId: string): Promise<SourceTrack> => {
 	const stored = redux.store.getState().content.mediaItems[trackId];
-	const storedAlbumId = stored?.type === "track" ? (stored.item as redux.Track).album?.id : undefined;
-	if (storedAlbumId !== undefined && storedAlbumId !== null) return String(storedAlbumId);
-
+	if (stored?.type === "track" && stored.item.album?.id !== undefined && stored.item.album?.id !== null) {
+		return toSourceTrack(stored.item as redux.Track);
+	}
 	const track = await getJson<redux.Track>(withQuery(`tracks/${trackId}`)).catch(() => undefined);
-	const albumId = track?.album?.id;
-	return albumId === undefined || albumId === null ? undefined : String(albumId);
+	return track === undefined ? { trackId } : toSourceTrack(track);
 };
 
 const CHUNK_SIZE = 50;
