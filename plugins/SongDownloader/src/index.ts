@@ -1,6 +1,7 @@
 import { Tracer, type LunaUnload } from "@luna/core";
-import { ContextMenu, safeInterval, StyleTag } from "@luna/lib";
+import { ContextMenu, MediaItems, Playlist, safeInterval, StyleTag, type MediaCollection } from "@luna/lib";
 
+import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { addProgressToastStyles, ProgressToast } from "../../../shared/progressToast";
 import { getDownloadFolder, getDownloadPath, getFastLookupInfo, getResolvedFileInfo } from "./helpers";
 import { settings } from "./Settings";
@@ -30,6 +31,15 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 		const toast = new ProgressToast(unloads);
 		toast.update("Downloading tracks", "Starting…");
 		try {
+			// Luna caches playlist contents per session, so newly added songs would be missing: read it fresh
+			let collection: MediaCollection = mediaCollection;
+			if (mediaCollection instanceof Playlist) {
+				toast.update("Downloading tracks", "Loading playlist…");
+				const items = await fetchPlaylistItems(String(mediaCollection.uuid)).catch(trace.msg.err.withContext("Failed to load playlist"));
+				if (!items) return;
+				collection = MediaItems.fromTMediaItems(items);
+			}
+			const trackCount = await collection.count();
 
 			type PreparedTrack = {
 				mediaItem: Awaited<ReturnType<(typeof mediaCollection)["mediaItems"]>> extends AsyncIterable<infer T> ? T : never;
@@ -50,7 +60,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			}
 			downloadButton.elem!.style.setProperty("--progress", `${0}%`);
 			downloadButton.text = `Fetching selected tracks... (0/${trackCount})`;
-			for await (let mediaItem of await mediaCollection.mediaItems()) {
+			for await (let mediaItem of await collection.mediaItems()) {
 				if (toast.cancelled) break;
 				const { relativePathStem, simpleFileName, title } = getFastLookupInfo(mediaItem);
 				if (downloadFolder !== undefined && hasSongStemInCache(downloadFolder, relativePathStem)) {
@@ -65,12 +75,22 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 
 			let currentIndex = 1;
 			let downloaded = 0;
+			let unavailable = 0;
 			const totalToDownload = preparedTracks.length;
 			for (const preparedTrack of preparedTracks) {
 				if (toast.cancelled) break;
 				let mediaItem = preparedTrack.mediaItem;
-				if (settings.useRealMAX) mediaItem = (await mediaItem.max()) ?? mediaItem;
-				const { fileName, simpleFileName, tags } = await getResolvedFileInfo(mediaItem, settings.downloadQuality);
+				let fileInfo: Awaited<ReturnType<typeof getResolvedFileInfo>>;
+				try {
+					if (settings.useRealMAX) mediaItem = (await mediaItem.max()) ?? mediaItem;
+					fileInfo = await getResolvedFileInfo(mediaItem, settings.downloadQuality);
+				} catch (err) {
+					unavailable++;
+					currentIndex++;
+					trace.warn(`Skipped ${preparedTrack.simpleFileName} (track ${mediaItem.id}): ${err instanceof Error ? err.message : String(err)}`);
+					continue;
+				}
+				const { fileName, simpleFileName, tags } = fileInfo;
 
 				if (downloadFolder !== undefined && hasSongInCache(downloadFolder, fileName)) {
 					skippedExisting++;
@@ -129,7 +149,10 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			downloadButton.elem.classList.remove("download-button");
 
 			const skippedText = skippedExisting > 0 ? ` Skipped ${skippedExisting} already in your library.` : "";
-			trace.msg.log(`${toast.cancelled ? "Cancelled. " : ""}Downloaded ${downloaded} of ${trackCount} tracks.${skippedText}`);
+			const unavailableText = unavailable > 0 ? ` ${unavailable} not available (see console).` : "";
+			const summary = `${toast.cancelled ? "Cancelled. " : ""}Downloaded ${downloaded} of ${trackCount} tracks.${skippedText}${unavailableText}`;
+			if (unavailable > 0) trace.msg.warn(summary);
+			else trace.msg.log(summary);
 		} finally {
 			toast.remove();
 		}
