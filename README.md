@@ -2,9 +2,9 @@
 
 Plugins for [TidaLuna Client](https://github.com/Inrixia/TidaLuna) forked from [Inrixia](https://github.com/Inrixia).
 
-## Song Downloader
+## Librarian
 
-This repo contains an enhanced version of the SongDownloader plugin.
+An enhanced version of the SongDownloader plugin.
 
 ### New features
 - Live download status in the context menu button:

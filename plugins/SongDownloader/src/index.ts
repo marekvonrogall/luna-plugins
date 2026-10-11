@@ -11,7 +11,7 @@ import { addSongToCache, hasSongInCache, hasSongStemInCache, refreshSongCache, r
 
 import styles from "file://downloadButton.css?minify";
 
-export const { errSignal, trace } = Tracer("[SongDownloader]");
+export const { errSignal, trace } = Tracer("[Librarian]");
 export const unloads = new Set<LunaUnload>();
 
 new StyleTag("SongDownloader", unloads, styles);
