@@ -2,7 +2,7 @@ import { Tracer, type LunaUnload } from "@luna/core";
 import { Album, ContextMenu, Playlist, redux, StyleTag, type MediaCollection } from "@luna/lib";
 
 import {
-	getAlbumTrackIds,
+	getAlbumTracks,
 	getArtistReleases,
 	getFavoriteAlbums,
 	getFavoriteArtists,
@@ -88,7 +88,7 @@ const describeError = (err: unknown) => {
 	return err instanceof Error ? err.message : String(err);
 };
 
-const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSources, sourcePlaylistUuid?: string) => {
+const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSources) => {
 	const toast = new ProgressToast(unloads);
 	try {
 		toast.update(`Adding to “${target.title}”`, "Reading your selection…");
@@ -100,16 +100,13 @@ const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSource
 		// Target isn't pre-read (slow for big playlists), Tidal skips dupes server-side
 		const writer = new PlaylistWriter(target.uuid);
 
-		// Already in the target if the source playlist is the target
-		const knownInTarget = new Set<string>();
-		if (sourcePlaylistUuid === target.uuid) {
-			for (const { trackId } of sources) if (trackId !== undefined) knownInTarget.add(trackId);
-		}
 		const sentThisRun = new Set<string>();
 		const processedAlbums = new Set<string>();
 
 		let albumsHandled = 0;
 		let noAlbum = 0;
+		let aiAlbums = 0;
+		let aiSongs = 0;
 		const failedAlbums: string[] = [];
 
 		for (let i = 0; i < sources.length; i++) {
@@ -126,6 +123,10 @@ const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSource
 			// Fetch each album only once
 			if (processedAlbums.has(albumId)) continue;
 			processedAlbums.add(albumId);
+			if (source.aiAlbum) {
+				aiAlbums++;
+				continue;
+			}
 
 			toast.update(
 				`Adding to “${target.title}” (${i + 1}/${sources.length})`,
@@ -134,8 +135,14 @@ const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSource
 			);
 
 			try {
-				const albumTrackIds = await getAlbumTrackIds(albumId);
-				const toSend = [...new Set(albumTrackIds)].filter((id) => !knownInTarget.has(id) && !sentThisRun.has(id));
+				const { trackIds, aiCount } = await getAlbumTracks(albumId);
+				// Album made up of AI songs only
+				if (trackIds.length === 0 && aiCount > 0) {
+					aiAlbums++;
+					continue;
+				}
+				aiSongs += aiCount;
+				const toSend = [...new Set(trackIds)].filter((id) => !sentThisRun.has(id));
 				if (toSend.length > 0) await writer.add(toSend);
 				for (const id of toSend) sentThisRun.add(id);
 				albumsHandled++;
@@ -156,6 +163,7 @@ const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSource
 			`${toast.cancelled ? "Cancelled. " : ""}Added ${plural(writer.added, "song")} from ${plural(albumsHandled, "album")} to “${target.title}”.`,
 			skipped > 0 ? `Skipped ${plural(skipped, "song")} already in the playlist or unavailable.` : "",
 			noAlbum > 0 ? `${plural(noAlbum, "song")} had no album info.` : "",
+			aiAlbums + aiSongs > 0 ? `Left out AI-generated music (${[aiAlbums > 0 ? plural(aiAlbums, "album") : "", aiSongs > 0 ? plural(aiSongs, "song") : ""].filter(Boolean).join(", ")}).` : "",
 			failedAlbums.length > 0 ? `${plural(failedAlbums.length, "album")} failed (see console).` : "",
 		]
 			.filter(Boolean)
@@ -188,12 +196,14 @@ const showClean = async (button: ReturnType<typeof ContextMenu.addButton>, conte
 /** Asks for a target playlist, then collects the albums of the loaded songs into it */
 const startCollect = async (subtitle: string, loadSources: LoadSources, sourcePlaylistUuid?: string) => {
 	if (running) return;
-	const target = await pickPlaylist(unloads, getUserPlaylists, `${subtitle} Songs already in the playlist are skipped.`);
+	// The playlist being collected from can't be its own target
+	const loadTargets = async () => (await getUserPlaylists()).filter((playlist) => playlist.uuid !== sourcePlaylistUuid);
+	const target = await pickPlaylist(unloads, loadTargets, `${subtitle} Songs already in the playlist are skipped.`);
 	if (target === undefined) return;
 
 	running = true;
 	try {
-		await addAlbumsToPlaylist(target, loadSources, sourcePlaylistUuid);
+		await addAlbumsToPlaylist(target, loadSources);
 	} catch (err) {
 		trace.msg.err.withContext("Failed to add albums to playlist")(err as Error);
 	} finally {

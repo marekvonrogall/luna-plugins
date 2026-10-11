@@ -32,6 +32,7 @@ In My Collection, the **...** menu on the **Albums** tab collects every saved al
 - Pick one of your playlists from a searchable list
 - For every selected song, the whole album it belongs to is added to that playlist
 - Songs already in the target playlist are skipped
+- Songs and albums TIDAL labels as AI-generated are never collected
 - Each album is only fetched once, even if several selected songs come from it
 - Progress bar with a cancel button, summary notification when done
 
