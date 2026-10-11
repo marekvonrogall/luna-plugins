@@ -5,7 +5,7 @@ import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { addProgressToastStyles, ProgressToast } from "../../../shared/progressToast";
 import { getDownloadFolder, getDownloadPath, getFastLookupInfo, getResolvedFileInfo } from "./helpers";
 import { settings } from "./Settings";
-import { addSongToCache, hasSongInCache, hasSongStemInCache, refreshSongCache } from "./songCache";
+import { addSongToCache, hasSongInCache, hasSongStemInCache, refreshSongCache, renameSongInCache } from "./songCache";
 
 import styles from "file://downloadButton.css?minify";
 
@@ -62,7 +62,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			downloadButton.text = `Fetching selected tracks... (0/${trackCount})`;
 			for await (let mediaItem of await collection.mediaItems()) {
 				if (toast.cancelled) break;
-				const { relativePathStem, simpleFileName, title } = getFastLookupInfo(mediaItem);
+				const { relativePathStem, simpleFileName, title } = getFastLookupInfo(mediaItem, downloadFolder);
 				if (downloadFolder !== undefined && hasSongStemInCache(downloadFolder, relativePathStem)) {
 					skippedExisting++;
 				}
@@ -83,16 +83,25 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 				let fileInfo: Awaited<ReturnType<typeof getResolvedFileInfo>>;
 				try {
 					if (settings.useRealMAX) mediaItem = (await mediaItem.max()) ?? mediaItem;
-					fileInfo = await getResolvedFileInfo(mediaItem, settings.downloadQuality);
+					fileInfo = await getResolvedFileInfo(mediaItem, settings.downloadQuality, downloadFolder);
 				} catch (err) {
 					unavailable++;
 					currentIndex++;
 					trace.warn(`Skipped ${preparedTrack.simpleFileName} (track ${mediaItem.id}): ${err instanceof Error ? err.message : String(err)}`);
 					continue;
 				}
-				const { fileName, simpleFileName, tags } = fileInfo;
+				const { fileName, legacyFileName, simpleFileName, tags } = fileInfo;
 
 				if (downloadFolder !== undefined && hasSongInCache(downloadFolder, fileName)) {
+					skippedExisting++;
+					currentIndex++;
+					continue;
+				}
+				// Saved by an older version under a cut-off name (often without extension): fix the name, don't download again
+				if (downloadFolder !== undefined && legacyFileName !== undefined && hasSongInCache(downloadFolder, legacyFileName)) {
+					await renameSongInCache(downloadFolder, legacyFileName, fileName)
+						.then((renamed) => renamed && trace.log(`Renamed “${legacyFileName}” to “${fileName}”`))
+						.catch(trace.warn.withContext(`Failed to rename “${legacyFileName}”`));
 					skippedExisting++;
 					currentIndex++;
 					continue;
