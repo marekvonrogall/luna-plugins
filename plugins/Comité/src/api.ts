@@ -55,6 +55,36 @@ export const getAlbumItems = async (albumId: string): Promise<redux.MediaItem[]>
 	return items;
 };
 
+const fetchPaged = async <T>(path: string, limit: number, what: string): Promise<T[]> => {
+	const items: T[] = [];
+	for (let offset = 0; ; ) {
+		const res = await request(withQuery(path, `&limit=${limit}&offset=${offset}`));
+		if (!res.ok) throw failed(what, res);
+		const page = (await res.json()) as { items?: T[]; totalNumberOfItems?: number };
+		const pageItems = page.items ?? [];
+		items.push(...pageItems);
+		offset += pageItems.length;
+		if (pageItems.length === 0 || offset >= (page.totalNumberOfItems ?? 0)) break;
+	}
+	return items;
+};
+
+/** Album ids of an artist's albums, EPs and singles ("appears on" compilations excluded), clean/explicit twins merged */
+export const getArtistAlbumIds = async (artistId: string): Promise<string[]> => {
+	const [albums, singles] = await Promise.all([
+		fetchPaged<redux.Album>(`artists/${artistId}/albums`, 100, "Failed to load the artist's albums"),
+		fetchPaged<redux.Album>(`artists/${artistId}/albums?filter=EPSANDSINGLES`, 100, "Failed to load the artist's singles"),
+	]);
+	// Same release as clean + explicit version: keep only the explicit one
+	const releases = new Map<string, redux.Album>();
+	for (const album of [...albums, ...singles]) {
+		const key = `${album.title}|${album.version ?? ""}|${album.numberOfTracks}`.toLowerCase();
+		const existing = releases.get(key);
+		if (existing === undefined || (!existing.explicit && album.explicit)) releases.set(key, album);
+	}
+	return [...releases.values()].map((album) => String(album.id));
+};
+
 /** All favorited (hearted) tracks, as media items */
 export const getFavoriteTrackItems = async (): Promise<redux.MediaItem[]> => {
 	const userId = redux.store.getState().session?.userId;

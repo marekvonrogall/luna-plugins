@@ -2,12 +2,12 @@ import { ContentBase, MediaItem, PlayState, redux } from "@luna/lib";
 
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { pickPlaylist } from "../../../shared/playlistPicker";
-import { getAlbumItems, getFavoriteTrackItems, getUserPlaylists } from "./api";
+import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems, getUserPlaylists } from "./api";
 import { trace, unloads } from "./core";
 import { applyRating, loadRating, ratingOf, refreshRatings } from "./ratings";
 import { getRatingPlaylist, RATINGS, settings, setRatingPlaylist, stars } from "./store";
 
-export type RateSource = { type: "album" | "playlist" | "favorites"; id: string; title?: string };
+export type RateSource = { type: "album" | "playlist" | "favorites" | "artist"; id: string; title?: string };
 
 type Song = { id: string; title: string; artist: string; album: string; cover?: string; duration: number };
 
@@ -105,7 +105,7 @@ export const startRatingMode = async (source: RateSource) => {
 
 	const top = el("div", "comite-rm-top");
 	const heading = el("div", "comite-rm-heading");
-	heading.append("Rating ", el("b", "", source.title ?? (source.type === "album" ? "album" : "playlist")));
+	heading.append("Rating ", el("b", "", source.title ?? source.type));
 	const counter = el("span", "", "");
 	heading.append(counter);
 	const actions = el("div", "comite-rm-actions");
@@ -443,8 +443,28 @@ export const startRatingMode = async (source: RateSource) => {
 
 	// #region Load songs
 	try {
+		/** All songs of an artist's releases, a few albums at a time, in release order */
+		const loadArtist = async () => {
+			const albumIds = await getArtistAlbumIds(source.id);
+			const results: redux.MediaItem[][] = new Array(albumIds.length);
+			let nextIndex = 0;
+			let done = 0;
+			const worker = async () => {
+				while (nextIndex < albumIds.length && active) {
+					const i = nextIndex++;
+					results[i] = await getAlbumItems(albumIds[i]).catch((err) => {
+						trace.warn.withContext(`Rating mode: couldn't load album ${albumIds[i]}`)(err as Error);
+						return [];
+					});
+					title.textContent = `Loading songs… (${++done}/${albumIds.length} releases)`;
+				}
+			};
+			await Promise.all(Array.from({ length: Math.min(4, albumIds.length) }, worker));
+			return results.flat();
+		};
 		const loadItems = () => {
 			if (source.type === "album") return getAlbumItems(source.id);
+			if (source.type === "artist") return loadArtist();
 			if (source.type === "favorites") return getFavoriteTrackItems();
 			return fetchPlaylistItems(source.id);
 		};

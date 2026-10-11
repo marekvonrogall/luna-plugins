@@ -4,6 +4,8 @@ import { observe, redux } from "@luna/lib";
 import type { RateSource } from "./rateMode";
 
 const BUTTON_ATTR = "data-comite-rate";
+/** "More" in the page header: albums/playlists use show-context-menu-button, artist pages a more-button in header-controls */
+const MORE_SELECTOR = '[data-test="show-context-menu-button"], [data-test="header-controls"] > [data-test="more-button"]';
 const FAVORITES_ID = "comite-favorites-rate";
 const FAVORITES_PATH = /^\/my-collection\/tracks\/?$/;
 const STAR_SVG =
@@ -19,6 +21,8 @@ const currentSource = (): RateSource | undefined => {
 	if (album) return { type: "album", id: album[1], title: state.content.albums[album[1]]?.title };
 	const playlist = /^\/playlist\/([0-9a-f-]{36})/i.exec(path);
 	if (playlist) return { type: "playlist", id: playlist[1], title: state.content.playlists[playlist[1]]?.title };
+	const artist = /^\/artist\/(\d+)/.exec(path);
+	if (artist) return { type: "artist", id: artist[1], title: state.content.artists[artist[1]]?.name };
 	return undefined;
 };
 
@@ -94,17 +98,19 @@ const setupFavoritesButton = (unloads: LunaUnloads, onRate: (source: RateSource)
 	unloads.add(() => document.getElementById(FAVORITES_ID)?.remove());
 };
 
-/** Adds "Rate" left of the "More" button on album and playlist pages, and next to the title on the favorites page */
+/** Adds "Rate" left of the "More" button on album, playlist and artist pages, and next to the title on the favorites page */
 export const setupRateButton = (unloads: LunaUnloads, onRate: (source: RateSource) => void) => {
 	const ensure = (more: HTMLElement) => {
 		if (currentSource() === undefined) return;
+		// Only the page header's "More" (the first one), not e.g. album cards further down
+		if (more !== document.querySelector(MORE_SELECTOR)) return;
 		const container = more.parentElement;
 		if (!container || container.querySelector(`[${BUTTON_ATTR}]`)) return;
 		container.insertBefore(createButton(more, onRate), more);
 	};
-	const scan = () => document.querySelectorAll<HTMLElement>('[data-test="show-context-menu-button"]').forEach(ensure);
+	const scan = () => document.querySelectorAll<HTMLElement>(MORE_SELECTOR).forEach(ensure);
 
-	observe<HTMLElement>(unloads, '[data-test="show-context-menu-button"]', ensure);
+	observe<HTMLElement>(unloads, MORE_SELECTOR, ensure);
 	scan();
 	setupFavoritesButton(unloads, onRate);
 	unloads.add(() => document.querySelectorAll(`[${BUTTON_ATTR}]`).forEach((node) => node.remove()));
