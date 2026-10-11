@@ -23,11 +23,13 @@ This repo contains an enhanced version of the SongDownloader plugin.
 
 Right-click a playlist, an album, a single song or a selection of songs and choose **Collect**.
 
+For your favorite (hearted) tracks, use the **...** button next to the title on the Tracks page in My Collection and choose **Collect**.
+
 - Pick one of your playlists from a searchable list
 - For every selected song, the whole album it belongs to is added to that playlist
 - Songs already in the target playlist are skipped
 - Each album is only fetched once, even if several selected songs come from it
-- Progress toast with a cancel button, summary notification when done
+- Progress bar with a cancel button, summary notification when done
 
 ## Installation
 

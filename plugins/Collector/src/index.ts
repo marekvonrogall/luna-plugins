@@ -3,6 +3,7 @@ import { Album, ContextMenu, Playlist, redux, StyleTag, type MediaCollection } f
 
 import {
 	getAlbumTrackIds,
+	getFavoriteTracks,
 	getPlaylistItems,
 	getTrackAlbumId,
 	getUserPlaylists,
@@ -11,6 +12,7 @@ import {
 	type PlaylistInfo,
 	type SourceTrack,
 } from "./api";
+import { setupFavoritesButton } from "./favorites";
 import { pickPlaylist, ProgressToast } from "./ui";
 
 import styles from "file://styles.css?minify";
@@ -67,11 +69,14 @@ const resolveSources = async (collection: MediaCollection, onProgress: (done: nu
 	return sources;
 };
 
-const addAlbumsToPlaylist = async (collection: MediaCollection, target: PlaylistInfo) => {
+type OnProgress = (done: number, total: number) => void;
+type LoadSources = (onProgress: OnProgress) => Promise<SourceTrack[]>;
+
+const addAlbumsToPlaylist = async (target: PlaylistInfo, loadSources: LoadSources, sourcePlaylistUuid?: string) => {
 	const toast = new ProgressToast(unloads);
 	try {
 		toast.update(`Adding to “${target.title}”`, "Reading your selection…");
-		const sources = await resolveSources(collection, (done, total) =>
+		const sources = await loadSources((done, total) =>
 			toast.update(`Adding to “${target.title}”`, `Reading your selection… (${done}/${total})`, done / total),
 		);
 		if (toast.cancelled) return;
@@ -81,7 +86,7 @@ const addAlbumsToPlaylist = async (collection: MediaCollection, target: Playlist
 
 		// Already in the target if the source playlist is the target
 		const knownInTarget = new Set<string>();
-		if (collection instanceof Playlist && String(collection.uuid) === target.uuid) {
+		if (sourcePlaylistUuid === target.uuid) {
 			for (const { trackId } of sources) if (trackId !== undefined) knownInTarget.add(trackId);
 		}
 		const sentThisRun = new Set<string>();
@@ -142,12 +147,28 @@ const addAlbumsToPlaylist = async (collection: MediaCollection, target: Playlist
 	}
 };
 
+/** Asks for a target playlist, then collects the albums of the loaded songs into it */
+const startCollect = async (subtitle: string, loadSources: LoadSources, sourcePlaylistUuid?: string) => {
+	if (running) return;
+	const target = await pickPlaylist(unloads, getUserPlaylists, `${subtitle} Songs already in the playlist are skipped.`);
+	if (target === undefined) return;
+
+	running = true;
+	try {
+		await addAlbumsToPlaylist(target, loadSources, sourcePlaylistUuid);
+	} catch (err) {
+		trace.msg.err.withContext("Failed to add albums to playlist")(err as Error);
+	} finally {
+		running = false;
+	}
+};
+
 ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 	const count = await mediaCollection.count();
 	if (count === 0) return;
 
 	addAlbumsButton.text = running ? "Adding albums to playlist…" : BUTTON_TEXT;
-	addAlbumsButton.onClick(async () => {
+	addAlbumsButton.onClick(() => {
 		if (running) return;
 		try {
 			redux.actions["contextMenu/CLOSE"]();
@@ -157,22 +178,17 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 
 		const subtitle =
 			mediaCollection instanceof Album
-				? `The album “${mediaCollection.tidalAlbum.title}” will be added. Songs already in the playlist are skipped.`
+				? `The album “${mediaCollection.tidalAlbum.title}” will be added.`
 				: mediaCollection instanceof Playlist
-					? `The full album of every song in “${mediaCollection.tidalPlaylist.title}” will be added. Songs already in the playlist are skipped.`
-					: `The full album of ${count === 1 ? "the selected song" : `each of the ${count} selected songs`} will be added. Songs already in the playlist are skipped.`;
-		const target = await pickPlaylist(unloads, getUserPlaylists, subtitle);
-		if (target === undefined) return;
-
-		running = true;
-		try {
-			await addAlbumsToPlaylist(mediaCollection, target);
-		} catch (err) {
-			trace.msg.err.withContext("Failed to add albums to playlist")(err as Error);
-		} finally {
-			running = false;
-		}
+					? `The full album of every song in “${mediaCollection.tidalPlaylist.title}” will be added.`
+					: `The full album of ${count === 1 ? "the selected song" : `each of the ${count} selected songs`} will be added.`;
+		const sourcePlaylistUuid = mediaCollection instanceof Playlist ? String(mediaCollection.uuid) : undefined;
+		startCollect(subtitle, (onProgress) => resolveSources(mediaCollection, onProgress), sourcePlaylistUuid);
 	});
 
 	await addAlbumsButton.show(contextMenu);
 });
+
+setupFavoritesButton(unloads, () =>
+	startCollect("The full album of every song in your favorites will be added.", () => getFavoriteTracks()),
+);

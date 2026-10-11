@@ -97,6 +97,15 @@ export const getUserPlaylists = async (): Promise<PlaylistInfo[]> => {
 /** All items in a playlist */
 export const getPlaylistItems = (playlistUUID: string) => fetchAllPages<redux.MediaItem>(`playlists/${playlistUUID}/items`, 100);
 
+/** All favorited (hearted) tracks of the current user */
+export const getFavoriteTracks = async (): Promise<SourceTrack[]> => {
+	const favorites = await fetchAllPages<{ item: redux.Track }>(`users/${getUserId()}/favorites/tracks`, 1000);
+	return favorites.map(({ item }) => ({
+		trackId: String(item.id),
+		albumId: item.album?.id === undefined || item.album?.id === null ? undefined : String(item.album.id),
+	}));
+};
+
 /** Track ids of an album in album order, videos ignored */
 export const getAlbumTrackIds = async (albumId: string): Promise<string[]> => {
 	const items = await fetchAllPages<redux.MediaItem>(`albums/${albumId}/items`, 100);
