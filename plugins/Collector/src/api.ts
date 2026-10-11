@@ -155,9 +155,17 @@ export const getFavoriteAlbums = async (): Promise<SourceTrack[]> => {
 };
 
 /** Artists followed in My Collection */
-export const getFavoriteArtists = async (): Promise<{ id: string; name: string }[]> => {
+export interface ArtistInfo {
+	id: string;
+	name: string;
+	picture?: string;
+}
+
+export const getFavoriteArtists = async (): Promise<ArtistInfo[]> => {
 	const favorites = await fetchAllPages<{ item: redux.Artist }>(`users/${getUserId()}/favorites/artists`, 1000);
-	return favorites.map(({ item }) => ({ id: String(item.id), name: item.name }));
+	return favorites
+		.map(({ item }) => ({ id: String(item.id), name: item.name, picture: item.picture ?? undefined }))
+		.sort((a, b) => a.name.localeCompare(b.name));
 };
 
 /** Albums, EPs and singles of an artist ("appears on" compilations excluded), clean/explicit twins merged */
@@ -202,6 +210,8 @@ export const getTrackSource = async (trackId: string): Promise<SourceTrack> => {
 };
 
 const CHUNK_SIZE = 50;
+/** Max songs per playlist, TIDAL answers 400 beyond that */
+export const PLAYLIST_LIMIT = 20_000;
 
 /** Appends tracks to a playlist; dupes are skipped server-side, `added` is derived from numberOfTracks */
 export class PlaylistWriter {
@@ -209,7 +219,10 @@ export class PlaylistWriter {
 	private lastCount?: number;
 	public sent = 0;
 
-	constructor(public readonly uuid: string) {}
+	constructor(
+		public readonly uuid: string,
+		public readonly title: string,
+	) {}
 
 	/** Tracks actually added so far */
 	public get added() {
@@ -225,29 +238,39 @@ export class PlaylistWriter {
 		const count = (numberOfTracks ?? 0) + (numberOfVideos ?? 0);
 		this.initialCount ??= count;
 		this.lastCount = count;
-		return etag;
+		return { etag, room: PLAYLIST_LIMIT - count };
 	}
 
-	public async add(trackIds: string[]) {
-		for (let i = 0; i < trackIds.length; i += CHUNK_SIZE) {
-			const chunk = trackIds.slice(i, i + CHUNK_SIZE);
+	/** Adds as many tracks as fit and returns the ones that didn't */
+	public async add(trackIds: string[]): Promise<string[]> {
+		let i = 0;
+		while (i < trackIds.length) {
+			let chunk: string[] = [];
+			let room = 0;
 			let res: Response | undefined;
 			// ETag changes after every write, retry once if stale (412)
 			for (let attempt = 0; attempt < 2; attempt++) {
-				const etag = await this.fetchMeta();
+				const meta = await this.fetchMeta();
+				room = meta.room;
+				if (room <= 0) return trackIds.slice(i);
+				chunk = trackIds.slice(i, i + Math.min(CHUNK_SIZE, room));
 				res = await request(withQuery(`playlists/${this.uuid}/items`), {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/x-www-form-urlencoded",
-						"If-None-Match": etag,
+						"If-None-Match": meta.etag,
 					},
 					body: `trackIds=${chunk.join(",")}&onDupes=SKIP&onArtifactNotFound=SKIP`,
 				});
 				if (res.status !== 412) break;
 			}
+			// Close to the limit a 400 means full, e.g. if TIDAL counts slightly differently
+			if (res?.status === 400 && room <= CHUNK_SIZE) return trackIds.slice(i);
 			if (!res?.ok) throw new Error(`Failed to add tracks (${res?.status} ${res?.statusText})`);
 			this.sent += chunk.length;
+			i += chunk.length;
 		}
+		return [];
 	}
 
 	/** Updates `added` after the last POST */
@@ -255,6 +278,33 @@ export class PlaylistWriter {
 		if (this.sent > 0) await this.fetchMeta();
 	}
 }
+
+/** Creates an empty playlist in the root folder */
+export const createPlaylist = async (title: string): Promise<PlaylistInfo> => {
+	const params = new URLSearchParams({ name: title, description: "", folderId: "root" });
+	const res = await request(`https://api.tidal.com/v2/my-collection/playlists/folders/create-playlist?${params}`, { method: "PUT" });
+	if (!res.ok) throw new HttpError(res.status, res.statusText, res.url);
+	const json = await res.json();
+	const data = json.data ?? json;
+	if (!data?.uuid) throw new Error(`Created playlist “${title}” but got no id back`);
+	return { uuid: String(data.uuid), title, numberOfTracks: 0 };
+};
+
+/** Track ids currently in a playlist */
+export const getPlaylistTrackIds = async (playlistUUID: string): Promise<Set<string>> => {
+	const items = await getPlaylistItems(playlistUUID);
+	return new Set(items.map((i) => String(i.item.id)));
+};
+
+/** Makes new playlists show up in TIDAL's sidebar and collection */
+export const refreshPlaylistLists = () => {
+	try {
+		redux.actions["content/LOAD_CREATED_PLAYLISTS"]({ reset: true, getAll: true });
+		redux.actions["folders/LOAD_FOLDER_ITEMS"]({ context: "sidebar", reset: true, loadAll: true } as never);
+	} catch {
+		/* purely cosmetic */
+	}
+};
 
 /** Reloads the playlist in the Tidal UI */
 export const refreshPlaylistView = (playlistUUID: string) => {

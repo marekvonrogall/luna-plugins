@@ -27,12 +27,14 @@ For your favorite (hearted) tracks, use the **...** button next to the title on 
 
 On an artist page, open the **...** menu and choose **Collect** to add every album, EP and single of that artist.
 
-In My Collection, the **...** menu on the **Albums** tab collects every saved album, and on the **Artists** tab every album, EP and single of every artist you follow.
+In My Collection, the **...** menu on the **Albums** tab collects every saved album, and on the **Artists** tab every album, EP and single of the artists you follow (untick any you want to leave out).
 
 - Pick one of your playlists from a searchable list
 - For every selected song, the whole album it belongs to is added to that playlist
 - Songs already in the target playlist are skipped
 - Songs and albums TIDAL labels as AI-generated are never collected
+- Optionally tick exclusion playlists: songs already in them are not collected
+- When the playlist hits TIDAL's 20,000 song limit, collecting continues in `{name}-2`, `{name}-3`, … (created if needed, without repeating songs)
 - Each album is only fetched once, even if several selected songs come from it
 - Progress bar with a cancel button, summary notification when done
 

@@ -217,3 +217,57 @@
 .collector-menu-item:hover {
 	background: #2b2b30;
 }
+.collector-checklist {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+	overflow: hidden;
+}
+.collector-tools {
+	display: flex;
+	gap: 16px;
+}
+.collector-link {
+	padding: 0;
+	border: none;
+	background: none;
+	color: #32f4ff;
+	font-size: 13px;
+	cursor: pointer;
+}
+.collector-link:hover {
+	text-decoration: underline;
+}
+.collector-checklist .collector-row {
+	cursor: pointer;
+}
+.collector-checkbox {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	margin-left: auto;
+	accent-color: #32f4ff;
+	cursor: pointer;
+}
+.collector-cover-round {
+	border-radius: 50%;
+}
+.collector-counter {
+	font-size: 12px;
+	color: #a0a0a8;
+}
+.collector-footer {
+	gap: 8px;
+}
+.collector-btn-primary {
+	background: #32f4ff;
+	color: #000;
+	font-weight: 600;
+}
+.collector-btn-primary:hover:not(:disabled) {
+	background: #6ff7ff;
+}
+.collector-checklist .collector-list {
+	flex: 1 1 auto;
+}
