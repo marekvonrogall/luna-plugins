@@ -1,5 +1,6 @@
 import { addTrack, getPlaylistInfo, getPlaylistTrackIds, getUserPlaylists, refreshPlaylistView, removeTrack } from "./api";
-import { trace } from "./core";
+import { pickPlaylist } from "../../../shared/playlistPicker";
+import { trace, unloads } from "./core";
 import { getRatingPlaylist, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
 
 /** Track ids per rating, read from the rating playlists */
@@ -106,4 +107,41 @@ export const applyRating = async (trackId: string, rating: number) => {
 		refreshPlaylistView(playlist.uuid);
 	}
 	notify();
+};
+
+/** Ratings being saved right now, shown before TIDAL has confirmed them */
+const pending = new Map<string, number>();
+let picking = false;
+
+/** The rating to show for a song: the one being saved, else the stored one */
+export const shownRating = (trackId: string) => pending.get(trackId) ?? ratingOf(trackId);
+export const isSaving = (trackId: string) => pending.has(trackId);
+
+/** Rates a song from a star row; clicking its current rating again removes it. A rating's first use asks for its playlist. */
+export const rateTrack = async (trackId: string, clicked: number) => {
+	if (pending.has(trackId) || picking) return;
+	const next = ratingOf(trackId) === clicked ? 0 : clicked;
+	pending.set(trackId, next);
+	notify();
+	try {
+		// Cancelling the picker keeps the old rating
+		if (next !== 0 && getRatingPlaylist(next) === undefined) {
+			picking = true;
+			const chosen = await pickPlaylist(unloads, {
+				title: `Playlist for ${stars(next)}`,
+				subtitle: `Songs you rate ${next}★ are added to this playlist. Playlists used for another rating aren't listed.`,
+				loadPlaylists: playlistsForRating(next),
+			}).finally(() => {
+				picking = false;
+			});
+			if (!chosen) return;
+			await assignRatingPlaylist(next, chosen);
+		}
+		await applyRating(trackId, next);
+	} catch (err) {
+		trace.msg.err.withContext("Failed to save the rating")(err as Error);
+	} finally {
+		pending.delete(trackId);
+		notify();
+	}
 };

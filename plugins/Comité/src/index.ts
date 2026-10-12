@@ -1,12 +1,13 @@
 import { MediaItem, observe, StyleTag } from "@luna/lib";
 
-import { addPlaylistPickerStyles, pickPlaylist } from "../../../shared/playlistPicker";
+import { addPlaylistPickerStyles } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
 import { RATE_MODE_CSS, startRatingMode } from "./rateMode";
 import { FAVORITES_RATE_CSS, setupRateButton } from "./rateButton";
-import { applyRating, assignRatingPlaylist, playlistsForRating, ratingListeners, ratingOf, refreshRatings, refreshRatingsIfStale, validateRatingPlaylists } from "./ratings";
+import { RATING_COLUMN_CSS, setupRatingColumn } from "./ratingColumn";
+import { isSaving, rateTrack, ratingListeners, refreshRatings, refreshRatingsIfStale, shownRating, validateRatingPlaylists } from "./ratings";
 import { createStarRow, STAR_ROW_CSS, type StarRow } from "./starRow";
-import { getRatingPlaylist, stars } from "./store";
+import { stars } from "./store";
 
 export { errSignal, trace, unloads } from "./core";
 export { Settings } from "./Settings";
@@ -29,23 +30,23 @@ new StyleTag(
 `,
 );
 addPlaylistPickerStyles("Comité", unloads);
-new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS);
+new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS + RATING_COLUMN_CSS);
 
 let currentTrackId: string | undefined;
-let currentRating = 0;
-let busy = false;
 
 /** Star rows on screen: the player bar and, while open, the compact popover */
 const rows = new Set<StarRow>();
 
 const render = () => {
+	const currentRating = currentTrackId === undefined ? 0 : shownRating(currentTrackId);
+	const disabled = currentTrackId === undefined || isSaving(currentTrackId);
 	for (const row of rows) {
 		if (!row.element.isConnected) {
 			rows.delete(row);
 			continue;
 		}
 		row.setValue(currentRating);
-		row.setDisabled(busy || currentTrackId === undefined);
+		row.setDisabled(disabled);
 	}
 	const compact = document.querySelector<HTMLButtonElement>(`#${COMITÉ} .comite-compact`);
 	if (compact) {
@@ -82,35 +83,8 @@ const openPopover = (anchor: HTMLElement) => {
 	document.addEventListener("mousedown", onOutside, true);
 };
 
-const rate = async (rating: number) => {
-	const trackId = currentTrackId;
-	if (busy || trackId === undefined) return;
-	const previous = ratingOf(trackId);
-	// Clicking the current rating again removes it
-	const next = previous === rating ? 0 : rating;
-
-	busy = true;
-	currentRating = next;
-	render();
-	try {
-		// First use of this rating: ask for its playlist, cancelling keeps the old rating
-		if (next !== 0 && getRatingPlaylist(next) === undefined) {
-			const chosen = await pickPlaylist(unloads, {
-				title: `Playlist for ${stars(next)}`,
-				subtitle: `Songs you rate ${next}★ are added to this playlist. Playlists used for another rating aren't listed.`,
-				loadPlaylists: playlistsForRating(next),
-			});
-			if (!chosen) return;
-			await assignRatingPlaylist(next, chosen);
-		}
-		await applyRating(trackId, next);
-	} catch (err) {
-		trace.msg.err.withContext("Failed to save the rating")(err as Error);
-	} finally {
-		busy = false;
-		currentRating = currentTrackId === undefined ? 0 : ratingOf(currentTrackId);
-		render();
-	}
+const rate = (rating: number) => {
+	if (currentTrackId !== undefined) rateTrack(currentTrackId, rating);
 };
 
 let resizeObserver: ResizeObserver | undefined;
@@ -147,19 +121,15 @@ function loadComité(): void {
 
 const onTrack = (mediaItem?: MediaItem) => {
 	currentTrackId = mediaItem === undefined ? undefined : String(mediaItem.id);
-	currentRating = currentTrackId === undefined ? 0 : ratingOf(currentTrackId);
 	closePopover();
 	render();
 	refreshRatingsIfStale();
 };
 
-ratingListeners.add(() => {
-	if (busy) return;
-	currentRating = currentTrackId === undefined ? 0 : ratingOf(currentTrackId);
-	render();
-});
+ratingListeners.add(render);
 
 setupRateButton(unloads, startRatingMode);
+setupRatingColumn(unloads);
 observe(unloads, "#footerPlayer", loadComité);
 loadComité();
 MediaItem.onMediaTransition(unloads, onTrack);
