@@ -41,10 +41,18 @@ const fits = (row: HTMLElement) => {
 	return row.clientWidth >= needed;
 };
 
-const fit = (cell: HTMLElement) => {
-	if (cell.tagName === "TD" || cell.tagName === "TH") return;
-	const row = cell.parentElement;
-	if (row) cell.toggleAttribute(HIDDEN, !fits(row));
+/**
+ * All flex rows share the same columns, so one measurement decides for every row. Measuring per cell right after
+ * inserting it forced a full layout per row: with a search showing hundreds of rows that froze TIDAL for seconds.
+ */
+let flexFits = true;
+const FLEX_CELLS = `.${CELL}:not(td), .${HEADER}:not(th)`;
+const refitFlex = () => {
+	const row = document.querySelector<HTMLElement>(ROW_SELECTOR) ?? document.querySelector<HTMLElement>(HEADER_SELECTOR);
+	if (row === null) return;
+	// Read once, then write
+	flexFits = fits(row);
+	for (const element of document.querySelectorAll<HTMLElement>(FLEX_CELLS)) element.toggleAttribute(HIDDEN, !flexFits);
 };
 
 const starRows = new WeakMap<HTMLElement, StarRow>();
@@ -58,16 +66,26 @@ const paintCell = (cell: HTMLElement) => {
 	row.setDisabled(isSaving(trackId));
 };
 
-const createCell = (tag: "div" | "td" = "div") => {
-	const cell = document.createElement(tag);
-	cell.className = CELL;
-	cell.setAttribute("role", "cell");
+/** Stars are only built once a cell scrolls into view (a long search result would otherwise build thousands at once) */
+let cellVisibility: IntersectionObserver | undefined;
+
+const fillCell = (cell: HTMLElement) => {
+	if (starRows.has(cell)) return;
 	const row = createStarRow((value) => {
 		const trackId = cell.dataset.trackId;
 		if (trackId !== undefined) rateTrack(trackId, value);
 	});
 	starRows.set(cell, row);
 	cell.appendChild(row.element);
+	paintCell(cell);
+};
+
+const createCell = (tag: "div" | "td" = "div") => {
+	const cell = document.createElement(tag);
+	cell.className = CELL;
+	cell.setAttribute("role", "cell");
+	if (cellVisibility) cellVisibility.observe(cell);
+	else fillCell(cell);
 	// Clicking the stars must not select, play or start dragging the row
 	for (const type of ["click", "dblclick", "pointerdown"]) cell.addEventListener(type, (e) => e.stopPropagation());
 	cell.addEventListener("mousedown", (e) => {
@@ -183,12 +201,14 @@ const syncTables = () => {
 /** Adds missing cells and updates rows the virtual list reused for another song */
 const sync = () => {
 	syncTables();
+	let added = false;
 	for (const header of document.querySelectorAll<HTMLElement>(HEADER_SELECTOR)) {
 		if (header.querySelector(`:scope > .${HEADER}`)) continue;
 		const cell = createHeader(header);
 		if (cell === undefined) continue;
+		cell.toggleAttribute(HIDDEN, !flexFits);
 		header.insertBefore(cell, header.querySelector(CONTEXT_SELECTOR));
-		fit(cell);
+		added = true;
 	}
 	for (const row of document.querySelectorAll<HTMLElement>(ROW_SELECTOR)) {
 		const trackId = row.dataset.trackId;
@@ -199,24 +219,37 @@ const sync = () => {
 		}
 		if (cell === null) {
 			cell = createCell();
+			// Last known decision for now; measured once below
+			cell.toggleAttribute(HIDDEN, !flexFits);
 			row.insertBefore(cell, row.querySelector(CONTEXT_SELECTOR));
-			fit(cell);
+			added = true;
 		}
 		if (cell.dataset.trackId !== trackId) {
 			cell.dataset.trackId = trackId;
 			paintCell(cell);
 		}
 	}
+	if (added) refitFlex();
 };
 
 /** A "Rating" column in track tables (playlists, albums, favourites…) with clickable half-star ratings */
 export const setupRatingColumn = (unloads: LunaUnloads) => {
+	cellVisibility = new IntersectionObserver(
+		(entries) => {
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue;
+				cellVisibility?.unobserve(entry.target);
+				fillCell(entry.target as HTMLElement);
+			}
+		},
+		{ rootMargin: "300px" },
+	);
 	// Show / hide again whenever the table width changes (window, sidebar); one row stands in for its table
 	let resizeFrame = 0;
 	const resizeObserver = new ResizeObserver(() => {
 		resizeFrame ||= requestAnimationFrame(() => {
 			resizeFrame = 0;
-			document.querySelectorAll<HTMLElement>(`.${CELL}, .${HEADER}`).forEach(fit);
+			refitFlex();
 		});
 	});
 	let tableFrame = 0;
@@ -250,6 +283,8 @@ export const setupRatingColumn = (unloads: LunaUnloads) => {
 	unloads.add(() => {
 		observer.disconnect();
 		resizeObserver.disconnect();
+		cellVisibility?.disconnect();
+		cellVisibility = undefined;
 		tableResize?.disconnect();
 		tableResize = undefined;
 		tables.clear();
