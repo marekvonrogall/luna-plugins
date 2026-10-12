@@ -19,6 +19,20 @@ const request = async (url: string, init: RequestInit = {}, retries = 3): Promis
 	}
 };
 
+/** Right after TIDAL starts, login isn't finished yet (getAuthHeaders throws TidalError A0001): waits until it is */
+let signedIn: Promise<void> | undefined;
+export const waitForLogin = () =>
+	(signedIn ??= (async () => {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				await TidalApi.getAuthHeaders();
+				return;
+			} catch {
+				await new Promise((r) => setTimeout(r, Math.min(500 * 2 ** attempt, 10_000)));
+			}
+		}
+	})());
+
 const failed = (what: string, res: Response) => new Error(`${what} (${res.status} ${res.statusText})`);
 
 /** All playlists created by the current user, most recently updated first */

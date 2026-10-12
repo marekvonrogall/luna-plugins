@@ -1,4 +1,4 @@
-import { addTrack, getPlaylistInfo, getPlaylistTrackIds, getUserPlaylists, refreshPlaylistView, removeTrack } from "./api";
+import { addTrack, getPlaylistInfo, waitForLogin, getPlaylistTrackIds, getUserPlaylists, refreshPlaylistView, removeTrack } from "./api";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
 import { getRatingPlaylist, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
@@ -47,11 +47,24 @@ export const playlistsForRating = (rating: number) => async () => {
 	return (await getUserPlaylists()).filter((playlist) => !used.has(playlist.uuid));
 };
 
-/** Reloads all rating playlists (one run at a time) */
+/** Reloads all rating playlists (one run at a time); after a failure the next song change tries again */
 export const refreshRatings = () =>
-	(loading ??= Promise.all(RATINGS.map((rating) => loadRating(rating).catch(trace.warn.withContext(`Failed to load the ${rating}★ playlist`))))
-		.then(() => {
-			loadedAt = Date.now();
+	(loading ??= waitForLogin()
+		.then(() =>
+			Promise.all(
+				RATINGS.map((rating) =>
+					loadRating(rating).then(
+						() => true,
+						(err) => {
+							trace.warn.withContext(`Failed to load the ${rating}★ playlist`)(err as Error);
+							return false;
+						},
+					),
+				),
+			),
+		)
+		.then((results) => {
+			if (results.every(Boolean)) loadedAt = Date.now();
 		})
 		.finally(() => {
 			loading = undefined;
@@ -70,6 +83,7 @@ export const ratingOf = (trackId: string) => {
 
 /** On load: picks up renamed playlists, and clears a rating's playlist only if TIDAL says it no longer exists */
 export const validateRatingPlaylists = async () => {
+	await waitForLogin();
 	for (const rating of RATINGS) {
 		const playlist = getRatingPlaylist(rating);
 		if (playlist === undefined) continue;
