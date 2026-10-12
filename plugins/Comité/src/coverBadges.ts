@@ -18,11 +18,17 @@ const LINKS: Record<Kind, RegExp> = {
 /** Average badge in the top left of playlist / album covers and in the middle of artist pictures */
 export const COVER_BADGE_CSS = `
 .${BADGE} { position: absolute; top: 8px; left: 8px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; background: rgba(0, 0, 0, 0.72); color: #fff !important; font-size: 12px !important; font-weight: 700 !important; line-height: 18px !important; white-space: nowrap; font-variant-numeric: tabular-nums; text-transform: none; pointer-events: none; }
+/* Artist pictures have their play button in the middle: step aside while hovering */
+.${BADGE}[data-kind="artist"] { transition: opacity 0.15s; }
+:is([data-test^="artist-card-"], a[data-test="cell-cover"]):hover .${BADGE}[data-kind="artist"] { opacity: 0; }
+/* Some cover wrappers (artist page cards) stretch every child over the image: keep the badge a small pill */
+.${BADGE} { width: auto !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; max-width: calc(100% - 16px); right: auto !important; bottom: auto !important; display: inline-flex !important; box-sizing: border-box; object-fit: initial; }
 .${BADGE} > span { color: #fff !important; font: inherit !important; letter-spacing: normal; }
 .${BADGE} > svg.comite-badge-star { display: block; flex: none; width: 1em !important; height: 1em !important; margin: 0 !important; fill: #ffd432 !important; color: #ffd432 !important; }
 .${BADGE}[data-kind="artist"] { top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 13px; }
 .${BADGE}[data-variant="large"] { top: 12px; left: 12px; padding: 3px 9px; font-size: 15px !important; line-height: 22px !important; }
 /* Artist page: inline after "x fans" */
+.${BADGE}[data-role="solo"] > svg.comite-badge-star { fill: #ff8cc6 !important; color: #ff8cc6 !important; }
 .${BADGE}[data-variant="inline"] { position: relative; top: auto; left: auto; transform: none; margin-left: 10px; vertical-align: middle; font-size: 13px !important; background: rgba(255, 255, 255, 0.1); }
 /* Loading: the pill's border fills clockwise with the share of the playlist read */
 .${BADGE} > svg.comite-badge-ring { position: absolute; inset: 0; width: 100% !important; height: 100% !important; overflow: visible; fill: none !important; pointer-events: none; }
@@ -32,7 +38,8 @@ export const COVER_BADGE_CSS = `
 `;
 
 type Variant = "grid" | "large" | "inline";
-type Card = { kind: Kind; id: string; holder: HTMLElement; variant: Variant; visible: boolean; computed: number; token: number };
+/** `page`: the page the card was found on, so cards of a previous page are dropped */
+type Card = { kind: Kind; id: string; holder: HTMLElement; variant: Variant; page: string; visible: boolean; computed: number; token: number };
 
 /** Covers on screen, keyed by the card element that links to exactly one playlist / album / artist */
 const cards = new Map<HTMLElement, Card>();
@@ -41,21 +48,24 @@ let seen = new WeakMap<HTMLImageElement, string>();
 /** Covers the user shift-clicked show their average for the rest of the session, whatever the size or share rated */
 const forced = new Set<string>();
 
-type Page = { kind: Kind; detailId?: string };
+/** `cardsOnly`: only album / EP / single cards get badges (artist "View all" pages) */
+type Page = { kind: Kind; key: string; detailId?: string; cardsOnly?: boolean };
 
 /** My Collection tabs and playlist folders show grids of covers; album / playlist pages one big cover */
 const currentPage = (): Page | undefined => {
 	const path = redux.store.getState().router?.currentPath ?? window.location.pathname;
 	const tab = /^\/my-collection\/(playlists|albums|artists)/.exec(path);
-	if (tab) return { kind: TABS[tab[1]] };
-	if (/^\/folder\//.test(path)) return { kind: "playlist" };
+	if (tab) return { kind: TABS[tab[1]], key: path };
+	if (/^\/folder\//.test(path)) return { kind: "playlist", key: path };
 	const playlist = LINKS.playlist.exec(path);
-	if (playlist) return { kind: "playlist", detailId: playlist[1] };
+	if (playlist) return { kind: "playlist", key: path, detailId: playlist[1] };
 	const album = LINKS.album.exec(path);
-	if (album) return { kind: "album", detailId: album[1] };
+	if (album) return { kind: "album", key: path, detailId: album[1] };
 	const artist = LINKS.artist.exec(path);
-	if (artist) return { kind: "artist", detailId: artist[1] };
-	return undefined;
+	if (artist) return { kind: "artist", key: path, detailId: artist[1] };
+	// Any other page ("View all" of albums, EPs & singles, related albums / artists, home, search…):
+	// album and artist covers only, since those cost no requests
+	return { kind: "album", key: `${path}${window.location.search}`, cardsOnly: true };
 };
 
 /** Walks up from a cover image to the smallest element linking to exactly one item of the tab's kind */
@@ -75,19 +85,26 @@ const findCard = (img: HTMLImageElement, kind: Kind) => {
 	return undefined;
 };
 
-const removeBadge = (card: Card) => card.holder.querySelector(`:scope > .${BADGE}`)?.remove();
+const removeBadge = (card: Card, role?: BadgeRole) =>
+	card.holder.querySelectorAll(`:scope > .${BADGE}${role ? `[data-role="${role}"]` : ""}`).forEach((badge) => badge.remove());
+
+/** "main": all rated songs (yellow star); "solo": artist page only, songs by the artist alone (pink star) */
+type BadgeRole = "main" | "solo";
 
 const SVG = "http://www.w3.org/2000/svg";
 
-const ensureBadge = (card: Card) => {
-	let badge = card.holder.querySelector<HTMLElement>(`:scope > .${BADGE}`);
+const ensureBadge = (card: Card, role: BadgeRole = "main") => {
+	let badge = card.holder.querySelector<HTMLElement>(`:scope > .${BADGE}[data-role="${role}"]`);
 	if (badge === null) {
 		badge = document.createElement("div");
 		badge.className = BADGE;
 		badge.dataset.kind = card.kind;
 		badge.dataset.variant = card.variant;
+		badge.dataset.role = role;
 		if (card.variant !== "inline" && getComputedStyle(card.holder).position === "static") card.holder.style.position = "relative";
-		card.holder.appendChild(badge);
+		// The pink badge always sits right of the yellow one
+		const solo = role === "main" ? card.holder.querySelector(`:scope > .${BADGE}[data-role="solo"]`) : null;
+		card.holder.insertBefore(badge, solo);
 	}
 	return badge;
 };
@@ -117,13 +134,27 @@ const showLoading = (card: Card) => {
 	return (fraction: number) => ring.querySelector(".bar")?.setAttribute("stroke-dashoffset", String(100 - Math.round(fraction * 100)));
 };
 
+const fillBadge = (badge: HTMLElement, value: number, title: string) => {
+	const text = document.createElement("span");
+	text.textContent = value.toFixed(2);
+	badge.replaceChildren(createStar(), text);
+	badge.title = title;
+};
+
+const songs = (count: number) => `${count} rated song${count === 1 ? "" : "s"}`;
+
 const render = (card: Card, result: AverageResult | undefined) => {
 	if (result?.kind !== "average") return removeBadge(card);
-	const badge = ensureBadge(card);
-	const value = document.createElement("span");
-	value.textContent = result.value.toFixed(2);
-	badge.replaceChildren(createStar(), value);
-	badge.title = `Average of ${result.rated} rated song${result.rated === 1 ? "" : "s"}${result.total !== undefined ? ` (of ${result.total})` : ""}`;
+	// Artist page: pink = songs by the artist alone; yellow (all songs) only if rated collaborations make it differ
+	const artistPage = card.kind === "artist" && card.variant === "inline";
+	const solo = artistPage ? result.solo : undefined;
+	const showMain = solo === undefined || (result.collabRated ?? 0) > 0;
+	if (showMain) {
+		const total = result.total !== undefined ? ` (of ${result.total})` : "";
+		fillBadge(ensureBadge(card), result.value, `Average of ${songs(result.rated)}${total}${artistPage ? ", including songs with other artists" : ""}`);
+	} else removeBadge(card, "main");
+	if (solo !== undefined) fillBadge(ensureBadge(card, "solo"), solo.value, `Average of ${songs(solo.rated)} by this artist alone (no features or collaborations)`);
+	else removeBadge(card, "solo");
 };
 
 const evaluate = async (card: Card, force = false) => {
@@ -144,7 +175,7 @@ const evaluate = async (card: Card, force = false) => {
 			card.kind === "album"
 				? albumAverage(card.id)
 				: card.kind === "artist"
-					? artistAverage(card.id, always)
+					? artistAverage(card.id)
 					: await playlistAverage(card.id, always, force ? onProgress : undefined);
 		if (setProgress !== undefined) {
 			// Let the border close before the number appears
@@ -193,12 +224,50 @@ const forget = (element: HTMLElement, card: Card) => {
 let lastPage: string | undefined;
 
 const addCard = (element: HTMLElement, img: HTMLElement, kind: Kind, id: string, variant: Variant) => {
+	if (lastPage === undefined) return;
 	const parent = variant === "inline" ? img : img.parentElement;
 	if (parent === null) return;
 	const holder = parent instanceof HTMLPictureElement && parent.parentElement !== null ? parent.parentElement : parent;
-	const card: Card = { kind, id, holder, variant, visible: false, computed: -1, token: 0 };
+	const card: Card = { kind, id, holder, variant, page: lastPage, visible: false, computed: -1, token: 0 };
 	cards.set(element, card);
 	visibility.observe(holder);
+};
+
+/** Album / EP / single and artist cards ("Fans also like"): free, their averages come from the loaded ratings */
+const scanAlbumCards = (root: HTMLElement) => {
+	for (const card of root.querySelectorAll<HTMLElement>('[data-test^="album-card-"], [data-test^="artist-card-"]')) {
+		const match = /^(album|artist)-card-(\d+)$/.exec(card.dataset.test ?? "");
+		const img = card.querySelector<HTMLImageElement>("img");
+		if (match === null || img === null) continue;
+		const [, kind, id] = match as unknown as [string, Kind, string];
+		const existing = cards.get(card);
+		if (existing?.id === id && existing.holder.isConnected) continue;
+		if (existing !== undefined) forget(card, existing);
+		addCard(card, img, kind, id, "grid");
+	}
+};
+
+/** "Related albums" / "Related artists" cells (cover links); playlists are skipped since they would need requests */
+const scanCells = (root: HTMLElement) => {
+	for (const link of root.querySelectorAll<HTMLAnchorElement>('a[data-test="cell-cover"]')) {
+		const href = link.getAttribute("href") ?? "";
+		const album = LINKS.album.exec(href);
+		const artist = album ? null : LINKS.artist.exec(href);
+		const kind: Kind | undefined = album ? "album" : artist ? "artist" : undefined;
+		const id = album?.[1] ?? artist?.[1];
+		const img = link.querySelector<HTMLImageElement>("img");
+		if (kind === undefined || id === undefined || img === null) continue;
+		const existing = cards.get(link);
+		if (existing?.id === id && existing.holder.isConnected) continue;
+		if (existing !== undefined) forget(link, existing);
+		addCard(link, img, kind, id, "grid");
+	}
+};
+
+/** Everything on artist pages and their "View all" pages that only needs the loaded ratings */
+const scanFreeCards = (root: HTMLElement) => {
+	scanAlbumCards(root);
+	scanCells(root);
 };
 
 /** The big cover in the header of an album / playlist page, or next to "x fans" on an artist page */
@@ -206,8 +275,11 @@ const scanDetail = (root: HTMLElement, kind: Kind, id: string) => {
 	if (kind === "artist") {
 		const meta = root.querySelector<HTMLElement>('[data-test="artist-meta"]');
 		if (meta !== null && !cards.get(meta)?.holder.isConnected) addCard(meta, meta, kind, id, "inline");
+		scanFreeCards(root);
 		return;
 	}
+	// Album pages: "More by" / related albums and artists further down
+	if (kind === "album") scanFreeCards(root);
 	const img = root.querySelector<HTMLImageElement>('img[data-test="cover-art"]');
 	if (img === null) return;
 	// On your own playlists the cover is a "Change image" button: shift-clicking anywhere on it counts
@@ -220,13 +292,14 @@ const scanDetail = (root: HTMLElement, kind: Kind, id: string) => {
 const scan = () => {
 	const page = currentPage();
 	const kind = page?.kind;
-	for (const [element, card] of cards) if (!element.isConnected || !card.holder.isConnected || card.kind !== kind || (page?.detailId !== undefined && card.id !== page.detailId)) forget(element, card);
-	if (page === undefined || kind === undefined) return;
-	const pageKey = `${kind}:${page.detailId ?? "grid"}`;
+	const pageKey = page?.key;
+	for (const [element, card] of cards) if (!element.isConnected || !card.holder.isConnected || card.page !== pageKey) forget(element, card);
+	if (page === undefined || kind === undefined || pageKey === undefined) return;
 	if (pageKey !== lastPage) seen = new WeakMap();
 	lastPage = pageKey;
 	const root = document.querySelector<HTMLElement>('[data-test="main"]') ?? document.querySelector<HTMLElement>("main");
 	if (root === null) return;
+	if (page.cardsOnly) return scanFreeCards(root);
 	if (page.detailId !== undefined) return scanDetail(root, kind, page.detailId);
 	for (const img of root.querySelectorAll<HTMLImageElement>("img")) {
 		const src = img.currentSrc || img.src;

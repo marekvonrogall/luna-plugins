@@ -14,8 +14,10 @@ export type RateSource = { type: "album" | "playlist" | "favorites" | "artist" |
 type Song = { id: string; title: string; artist: string; artistIds: string[]; songKey: string; album: string; cover?: string; duration: number };
 
 const OVERLAY = "comite-rate-mode";
-/** Songs start here, so you hear more than the intro */
-const START_AT = 0.3;
+/** Star / Shuffle colour when the cover has no usable colour: a soft pastel yellow */
+const FALLBACK_ACCENT = "#f2dc8f";
+/** Where each song starts (share of its length), set in the plugin settings */
+const startAt = () => Math.min(Math.max(settings.rateStartAt ?? 30, 0), 90) / 100;
 
 export const RATE_MODE_CSS = `
 #${OVERLAY} { position: fixed; inset: 0; z-index: 99990; display: flex; flex-direction: column; overflow: hidden; background: #0b0b0d; color: #fff; user-select: none; }
@@ -26,7 +28,7 @@ export const RATE_MODE_CSS = `
 .comite-rm-heading b { color: #fff; }
 .comite-rm-actions { display: flex; align-items: center; gap: 10px; }
 .comite-rm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #fff; font-size: 13px; cursor: pointer; }
-.comite-rm-chip[aria-pressed="true"] { border-color: var(--comite-accent, #ffd432); color: var(--comite-accent, #ffd432); transition: color 0.3s, border-color 0.3s; }
+.comite-rm-chip[aria-pressed="true"] { border-color: var(--comite-accent, ${FALLBACK_ACCENT}); color: var(--comite-accent, ${FALLBACK_ACCENT}); transition: color 0.3s, border-color 0.3s; }
 .comite-rm-chip svg { width: 16px; height: 16px; fill: currentColor; }
 /* Drawn on a 16-unit grid (close icon: 24), so it needs a smaller box to look the same size */
 .comite-rm-chip svg.comite-rm-shuffle-icon { width: 11px; height: 11px; position: relative; top: 1px; }
@@ -35,7 +37,7 @@ export const RATE_MODE_CSS = `
 .comite-rm-cover { width: min(300px, 38vh); aspect-ratio: 1; border-radius: 12px; background: #222 center / cover no-repeat; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
 .comite-rm-title { max-width: min(640px, 90vw); font-size: 24px; font-weight: 700; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .comite-rm-sub { max-width: min(640px, 90vw); margin-top: -8px; font-size: 14px; color: #b0b0b8; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.comite-rm-stars { margin-top: 10px; --star-size: 56px; --star-gap: 14px; --star-color: var(--comite-accent, #ffd432); --star-dim-color: rgba(255, 255, 255, 0.35); --star-dim-opacity: 1; }
+.comite-rm-stars { margin-top: 10px; --star-size: 56px; --star-gap: 14px; --star-color: var(--comite-accent, ${FALLBACK_ACCENT}); --star-dim-color: rgba(255, 255, 255, 0.35); --star-dim-opacity: 1; }
 .comite-rm-stars .comite-starbtn:hover { transform: scale(1.12); }
 .comite-rm-stars.rated .comite-starbtn:not([data-fill="0"]) { animation: comite-pop 0.3s ease-out; }
 @keyframes comite-pop { 50% { transform: scale(1.3); } }
@@ -286,7 +288,7 @@ export const startRatingMode = async (source: RateSource) => {
 		shuffleBtn.title = settings.rateShuffle ? "Random order (click for album/playlist order)" : "Album/playlist order (click for random)";
 	};
 
-	/** Starts the song and jumps to START_AT once it's actually playing */
+	/** Starts the song and jumps to the configured start point once it's actually playing */
 	const playCurrent = async () => {
 		const song = current();
 		if (song === undefined) return;
@@ -311,7 +313,7 @@ export const startRatingMode = async (source: RateSource) => {
 			const playing = String(PlayState.playbackContext?.actualProductId) === song.id && PlayState.currentTime > 0;
 			if (playing) {
 				started = true;
-				if (song.duration > 0) PlayState.seek(Math.floor(song.duration * START_AT));
+				if (song.duration > 0 && startAt() > 0) PlayState.seek(Math.floor(song.duration * startAt()));
 				return;
 			}
 			if (Date.now() - startedAt < 10_000) setTimeout(seekWhenReady, 150);
@@ -339,9 +341,13 @@ export const startRatingMode = async (source: RateSource) => {
 		sameHint.hidden = same.length === 0;
 		sameHint.textContent = same
 			.slice(0, 3)
-			.map(({ rating, albumTitle }) => `Rated ${stars(rating)} (${rating}) on ${albumTitle ? `“${albumTitle}”` : "another release"}`)
+			// Name the version when it differs, e.g. rating "Song 1 (Live)" while "Song 1" is rated
+			.map(({ rating, albumTitle, title }) => {
+				const version = title.toLowerCase() !== song.title.toLowerCase() ? ` as “${title}”` : "";
+				return `Rated ${stars(rating)} (${rating})${version} on ${albumTitle ? `“${albumTitle}”` : "another release"}`;
+			})
 			.join(" · ");
-		sameHint.title = "You already rated this song on another release (e.g. the single and the album)";
+		sameHint.title = "You already rated this song, or another version of it (live, remix, piano…), on another release";
 		message.textContent = "";
 		starsRow.classList.remove("rated");
 		started = false;

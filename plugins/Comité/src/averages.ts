@@ -7,13 +7,20 @@ import { getTrackMeta, ratedTracks, ratingsVersion } from "./ratings";
 const PLAYLIST_MIN_COVERAGE = 0.75;
 /** Playlists with this many songs or more are only averaged on request (shift-click) */
 const MAX_PLAYLIST_SIZE = 500;
-/** Artists show an average once this many of their songs are rated */
-const ARTIST_MIN_RATED = 10;
 /** Playlists without a lastUpdated stamp are re-read after this long */
 const PLAYLIST_MAX_AGE = 10 * 60 * 1000;
 
 export type AverageResult =
-	| { kind: "average"; value: number; rated: number; total?: number }
+	| {
+			kind: "average";
+			value: number;
+			rated: number;
+			total?: number;
+			/** Artists: average of the songs by this artist alone (no other credited artist) */
+			solo?: { value: number; rated: number };
+			/** Artists: rated songs this artist made together with others */
+			collabRated?: number;
+	  }
 	| { kind: "incomplete"; rated: number; total: number }
 	| { kind: "unrated" }
 	| { kind: "too-big"; total: number };
@@ -23,12 +30,14 @@ let indexed = -1;
 let all = new Map<string, number>();
 let byAlbum = new Map<string, number[]>();
 let byArtist = new Map<string, number[]>();
+let byArtistSolo = new Map<string, number[]>();
 const index = () => {
 	if (indexed === ratingsVersion()) return;
 	indexed = ratingsVersion();
 	all = ratedTracks();
 	byAlbum = new Map();
 	byArtist = new Map();
+	byArtistSolo = new Map();
 	const push = (map: Map<string, number[]>, key: string, rating: number) => {
 		const list = map.get(key);
 		if (list) list.push(rating);
@@ -38,7 +47,9 @@ const index = () => {
 		const meta = getTrackMeta(trackId);
 		if (meta === undefined) continue;
 		if (meta.album !== undefined) push(byAlbum, meta.album, rating);
-		for (const artist of new Set(meta.artists)) push(byArtist, artist, rating);
+		const artists = new Set(meta.artists);
+		for (const artist of artists) push(byArtist, artist, rating);
+		if (artists.size === 1) push(byArtistSolo, [...artists][0], rating);
 	}
 };
 
@@ -58,13 +69,17 @@ export const albumAverage = (albumId: string): AverageResult => {
 	return average(ratings, typeof total === "number" ? total : undefined);
 };
 
-/** Free: 10 rated songs (or a shift-click) are enough */
-export const artistAverage = (artistId: string, force = false): AverageResult => {
+/** Free: any rated song by the artist is enough */
+export const artistAverage = (artistId: string): AverageResult => {
 	index();
 	const ratings = byArtist.get(artistId);
 	if (ratings === undefined) return { kind: "unrated" };
-	if (force || ratings.length >= ARTIST_MIN_RATED) return average(ratings);
-	return { kind: "incomplete", rated: ratings.length, total: ARTIST_MIN_RATED };
+	const solo = byArtistSolo.get(artistId);
+	return {
+		...(average(ratings) as Extract<AverageResult, { kind: "average" }>),
+		solo: solo === undefined ? undefined : { value: solo.reduce((sum, rating) => sum + rating, 0) / solo.length, rated: solo.length },
+		collabRated: ratings.length - (solo?.length ?? 0),
+	};
 };
 
 /** At most two page requests at a time, so a page full of covers can't trigger rate limiting */

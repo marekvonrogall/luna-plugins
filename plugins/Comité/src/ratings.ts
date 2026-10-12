@@ -23,17 +23,26 @@ const notify = () => {
 export const ratingsVersion = () => changes;
 
 /** Album and artists of every rated song, so averages per album / artist need no extra requests */
-type TrackMeta = { album?: string; albumTitle?: string; artists: string[]; songKey: string };
+type TrackMeta = { album?: string; albumTitle?: string; artists: string[]; songKey: string; title: string };
 const trackMeta = new Map<string, TrackMeta>();
 
-/** Name used to spot the same song on another release: ignores case, punctuation, features and "album / single version" / "remastered" */
-export const songKey = (title: string, version?: string | null) =>
-	`${title} ${version ?? ""}`
+/** Words that mark a " - …" title suffix as a version (e.g. "Song - Live at Wembley"), not part of the name */
+const VERSION_SUFFIX = /\s[-–—]\s[^-–—]*\b(?:live|version|mix|remix|edit|remaster(?:ed)?|acoustic|piano|orchestral|instrumental|demo|mono|stereo|unplugged|session|reprise|sped up|slowed)\b[^-–—]*$/i;
+
+/**
+ * Base name of a song, so all its versions match: "Song 1", "Song 1 (Live)", "Song 1 [Piano]", "Song 1 - Orchestral Version"
+ * and the TIDAL version field all give "song 1". Ignores case and punctuation.
+ */
+export const songKey = (title: string, _version?: string | null) =>
+	title
+		.replace(/\s*[([][^)\]]*[)\]]/g, " ")
+		.replace(VERSION_SUFFIX, " ")
 		.toLowerCase()
-		.replace(/[([](?:feat|ft|with)\.?\s[^)\]]*[)\]]/g, " ")
-		.replace(/\b(?:album|single|original) version\b|\bremaster(?:ed)?(?: \d{4})?\b|\b\d{4} remaster(?:ed)?\b/g, " ")
 		.replace(/[^\p{L}\p{N}]+/gu, " ")
 		.trim();
+
+/** Full name as TIDAL shows it, e.g. "Song 1 (Live)" */
+const displayTitle = (title: string, version?: string | null) => (version ? `${title} (${version})` : title);
 
 const rememberTrack = (item: redux.MediaItem["item"] | undefined) => {
 	if (item === undefined) return;
@@ -43,6 +52,7 @@ const rememberTrack = (item: redux.MediaItem["item"] | undefined) => {
 		albumTitle: item.album?.title ?? undefined,
 		artists: (item.artists ?? []).map((artist) => String(artist.id)),
 		songKey: songKey(item.title ?? "", version),
+		title: displayTitle(item.title ?? "", version),
 	});
 };
 export const getTrackMeta = (trackId: string) => trackMeta.get(trackId);
@@ -50,13 +60,13 @@ export const getTrackMeta = (trackId: string) => trackMeta.get(trackId);
 /** Rated songs (other than `trackId`) with the same name and at least one shared artist, e.g. a single re-released on an album */
 export const sameSongRatings = (trackId: string, key: string, artistIds: string[]) => {
 	const artists = new Set(artistIds);
-	const matches: { trackId: string; rating: number; albumTitle?: string }[] = [];
+	const matches: { trackId: string; rating: number; albumTitle?: string; title: string }[] = [];
 	if (key === "") return matches;
 	for (const [id, rating] of ratedTracks()) {
 		if (id === trackId) continue;
 		const meta = trackMeta.get(id);
 		if (meta?.songKey !== key || !meta.artists.some((artist) => artists.has(artist))) continue;
-		matches.push({ trackId: id, rating, albumTitle: meta.albumTitle });
+		matches.push({ trackId: id, rating, albumTitle: meta.albumTitle, title: meta.title });
 	}
 	return matches;
 };
