@@ -22,7 +22,7 @@ const StarDisplay = ({ rating }: { rating: number }) => (
 
 export const Settings = () => {
 	const [, rerender] = React.useReducer((n: number) => n + 1, 0);
-	const [startAt, setStartAt] = React.useState(settings.rateStartAt ?? 30);
+	const [startAt, setStartAt] = React.useState(settings.rateStartAt ?? 0);
 
 	return (
 		<LunaSettings>

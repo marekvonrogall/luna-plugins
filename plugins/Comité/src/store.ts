@@ -8,10 +8,12 @@ type Store = {
 	rateShuffle: boolean;
 	/** Rating mode starts each song at this percentage of its length */
 	rateStartAt: number;
+	/** Rating mode as a higher / lower game against songs you already rated */
+	rateGame: boolean;
 };
 
 /** One playlist per rating, kept until changed in the plugin settings */
-export const settings = await ReactiveStore.getPluginStorage<Store>("Comité", { playlists: {}, rateShuffle: true, rateStartAt: 30 });
+export const settings = await ReactiveStore.getPluginStorage<Store>("Comité", { playlists: {}, rateShuffle: true, rateStartAt: 0, rateGame: false });
 
 /** Half-star steps from 0.5 to 5 */
 export const RATINGS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;

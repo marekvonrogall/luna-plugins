@@ -4,10 +4,10 @@ import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems, getMixItems } from "./api";
 import { trace, unloads } from "./core";
-import { applyRating, assignRatingPlaylist, playlistsForRating, ratingOf, refreshRatings, sameSongRatings, songKey } from "./ratings";
+import { applyRating, assignRatingPlaylist, getTrackMeta, playlistsForRating, ratedTracks, ratingOf, refreshRatings, sameSongRatings, songKey } from "./ratings";
 import { fetchCoverBase64 } from "./cover.native";
 import { createStarRow } from "./starRow";
-import { getRatingPlaylist, settings, stars } from "./store";
+import { getRatingPlaylist, RATINGS, settings, stars } from "./store";
 
 export type RateSource = { type: "album" | "playlist" | "favorites" | "artist" | "mix"; id: string; title?: string };
 
@@ -17,7 +17,7 @@ const OVERLAY = "comite-rate-mode";
 /** Star / Shuffle colour when the cover has no usable colour: a soft pastel yellow */
 const FALLBACK_ACCENT = "#f2dc8f";
 /** Where each song starts (share of its length), set in the plugin settings */
-const startAt = () => Math.min(Math.max(settings.rateStartAt ?? 30, 0), 90) / 100;
+const startAt = () => Math.min(Math.max(settings.rateStartAt ?? 0, 0), 90) / 100;
 
 export const RATE_MODE_CSS = `
 #${OVERLAY} { position: fixed; inset: 0; z-index: 99990; display: flex; flex-direction: column; overflow: hidden; background: #0b0b0d; color: #fff; user-select: none; }
@@ -41,6 +41,25 @@ export const RATE_MODE_CSS = `
 .comite-rm-stars .comite-starbtn:hover { transform: scale(1.12); }
 .comite-rm-stars.rated .comite-starbtn:not([data-fill="0"]) { animation: comite-pop 0.3s ease-out; }
 @keyframes comite-pop { 50% { transform: scale(1.3); } }
+/* Higher / Lower mode: 50/50 duels */
+/* Fits the two cards; "Can't decide" stretches to their full width */
+.comite-rm-duel { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: fit-content; max-width: 90vw; }
+.comite-rm-duel[hidden], .comite-rm-stars[hidden], .comite-rm-cover[hidden], .comite-rm-title[hidden], .comite-rm-sub[hidden] { display: none; }
+.comite-rm-duel-cards { display: flex; align-items: stretch; gap: 20px; }
+.comite-rm-card { box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; width: min(250px, 36vw, 32vh); padding: 12px; border: 1px solid transparent; border-radius: 12px; background: rgba(255, 255, 255, 0.06); transition: border-color 0.2s; }
+.comite-rm-card[data-playing] { border-color: var(--comite-accent, ${FALLBACK_ACCENT}); }
+.comite-rm-card-cover { position: relative; width: 100%; aspect-ratio: 1; padding: 0; border: none; border-radius: 8px; background: #222 center / cover no-repeat; cursor: pointer; }
+.comite-rm-card-play { position: absolute; left: 10px; bottom: 10px; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(0, 0, 0, 0.6); }
+.comite-rm-card-play svg { width: 18px; height: 18px; fill: #fff; }
+.comite-rm-card-label { font-size: 11px; color: #9a9aa4; text-transform: uppercase; letter-spacing: 0.06em; }
+.comite-rm-card-title, .comite-rm-card-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.comite-rm-card-title { margin-top: -4px; font-size: 16px; font-weight: 700; }
+.comite-rm-card-sub { margin-top: -6px; font-size: 13px; color: #b0b0b8; }
+.comite-rm-pick { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--comite-accent, ${FALLBACK_ACCENT}); border-radius: 12px; background: transparent; color: var(--comite-accent, ${FALLBACK_ACCENT}); font-size: 14px; font-weight: 700; cursor: pointer; }
+.comite-rm-pick:hover, .comite-rm-tie:hover { background: rgba(255, 255, 255, 0.1); }
+.comite-rm-tie { padding: 10px 18px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.comite-rm-duel-info { min-height: 16px; font-size: 12px; color: #9a9aa4; text-align: center; }
+.comite-rm-chip:disabled { opacity: 0.4; cursor: default; }
 .comite-rm-same { max-width: min(640px, 90vw); padding: 6px 14px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: #dcdce2; font-weight: 600; font-size: 13px; text-align: center; }
 .comite-rm-same[hidden] { display: none; }
 .comite-rm-message { min-height: 18px; font-size: 13px; color: #b0b0b8; text-align: center; }
@@ -189,7 +208,8 @@ export const startRatingMode = async (source: RateSource) => {
 	const exitBtn = el("button", "comite-rm-chip");
 	// TIDAL's own close icon
 	exitBtn.innerHTML = '<svg viewBox="0 0 24 24"><use href="#general__close"></use></svg><span>Exit</span>';
-	actions.append(shuffleBtn, exitBtn);
+	const gameBtn = el("button", "comite-rm-chip", "Higher / Lower");
+	actions.append(gameBtn, shuffleBtn, exitBtn);
 	top.append(heading, actions);
 
 	const center = el("div", "comite-rm-center");
@@ -204,7 +224,36 @@ export const startRatingMode = async (source: RateSource) => {
 	const sameHint = el("div", "comite-rm-same", "");
 	sameHint.hidden = true;
 	const message = el("div", "comite-rm-message", "");
-	center.append(cover, title, sub, starsRow, sameHint, message);
+	// Higher / Lower mode: 50/50 duels, the song being rated (left) against a rated song (right)
+	const duel = el("div", "comite-rm-duel");
+	duel.hidden = true;
+	const duelCards = el("div", "comite-rm-duel-cards");
+	const makeCard = (side: "left" | "right") => {
+		const card = el("div", "comite-rm-card");
+		// Cover click plays this side
+		const coverBtn = el("button", "comite-rm-card-cover");
+		const playBadge = el("div", "comite-rm-card-play");
+		coverBtn.appendChild(playBadge);
+		const label = el("div", "comite-rm-card-label", side === "left" ? "Rating now" : "Rated song");
+		const name = el("div", "comite-rm-card-title", "");
+		const artist = el("div", "comite-rm-card-sub", "");
+		const pick = el("button", "comite-rm-pick");
+		pick.textContent = "I like this more";
+		card.append(coverBtn, label, name, artist, pick);
+		coverBtn.addEventListener("click", () => listenTo(side));
+		// Result from the left song's view: 1 = left wins, 0 = right wins
+		pick.addEventListener("click", () => choose(side === "left" ? 1 : 0));
+		return { card, coverBtn, playBadge, name, artist };
+	};
+	const leftCard = makeCard("left");
+	const rightCard = makeCard("right");
+	duelCards.append(leftCard.card, rightCard.card);
+	const tieBtn = el("button", "comite-rm-tie");
+	tieBtn.textContent = "Can't decide";
+	tieBtn.addEventListener("click", () => choose(0.5));
+	const duelInfo = el("div", "comite-rm-duel-info", "");
+	duel.append(duelCards, tieBtn, duelInfo);
+	center.append(cover, title, sub, starsRow, duel, sameHint, message);
 
 	const bottom = el("div", "comite-rm-bottom");
 	const progress = el("div", "comite-rm-progress");
@@ -240,7 +289,7 @@ export const startRatingMode = async (source: RateSource) => {
 	volume.append(muteBtn, volumeSlider);
 	const left = el("div", "comite-rm-left");
 	left.append(playBtn, volume);
-	const hint = el("div", "comite-rm-hint", "1-5: Rate · Shift: +½ · S: Skip");
+	const hint = el("div", "comite-rm-hint", "");
 	const skipBtn = el("button", "comite-rm-skip", "Skip ⏭");
 	controls.append(left, hint, skipBtn);
 	bottom.append(progress, controls);
@@ -281,6 +330,220 @@ export const startRatingMode = async (source: RateSource) => {
 	let generation = 0;
 	let saving: Promise<void> = Promise.resolve();
 	const current = () => order[index] as Song | undefined;
+	/** Duels of the current song: its opponent, opponents already used, how many duels, how much the last one moved it */
+	let duelState: { opponentId?: string; used: Set<string>; games: number; lastMove: number } | undefined;
+	/** Session scores on the star scale: new songs start in the middle, rated songs at their rating; both move with every duel */
+	const scores = new Map<string, { score: number; games: number; rated?: number; title?: string }>();
+	// #endregion
+
+	// #region Higher / Lower: 50/50 duels
+	/** Rated songs per rating, e.g. 3.5 → ids */
+	const songsByRating = () => {
+		const groups = new Map<number, string[]>(RATINGS.map((rating) => [rating, []]));
+		for (const [id, rating] of ratedTracks()) groups.get(rating)?.push(id);
+		return groups;
+	};
+	/** Duels need a song to compare with at every rating */
+	const missingRatings = () => [...songsByRating()].filter(([, ids]) => ids.length === 0).map(([rating]) => rating);
+	const gameOn = () => settings.rateGame && missingRatings().length === 0;
+
+	const updateGameButton = () => {
+		const missing = missingRatings();
+		gameBtn.disabled = missing.length > 0;
+		gameBtn.ariaPressed = String(gameOn());
+		gameBtn.title =
+			missing.length > 0
+				? `Needs at least one rated song for every rating (missing: ${missing.map(stars).join(", ")})`
+				: settings.rateGame
+					? "50/50 duels against songs you rated (click for stars)"
+					: "Rate by picking the better of two songs, 50/50 style";
+		hint.textContent = gameOn() ? "←/→: Pick · ↓: Can't decide · A/D: Listen · S: Skip" : "1-5: Rate · Shift: +½ · S: Skip";
+		layoutHint();
+	};
+
+	// Elo-style scores on the star scale. Expected result of a vs b: 1 star apart ≈ 82% for the better one
+	const SLOPE = 1.5;
+	const expected = (a: number, b: number) => 1 / (1 + Math.exp(-SLOPE * (a - b)));
+	/** New songs move a lot at first (about a star), then less and less */
+	const newSongStep = (games: number) => 1.6 / (1 + 0.6 * games);
+	/** Rated songs move slowly: a few surprising duels shift them half a star */
+	const RATED_STEP = 0.2;
+	const MIN_DUELS = 4;
+	const MAX_DUELS = 8;
+	/** A new song is placed once a duel moves it less than this */
+	const SETTLED = 0.2;
+	const clampScore = (score: number) => Math.min(5.25, Math.max(0.25, score));
+	const toRating = (score: number) => Math.min(5, Math.max(0.5, Math.round(score * 2) / 2));
+
+	const scoreOf = (id: string) => {
+		let entry = scores.get(id);
+		if (entry === undefined) {
+			const rating = ratingOf(id);
+			entry = rating > 0 ? { score: rating, games: 0, rated: rating } : { score: 2.75, games: 0 };
+			scores.set(id, entry);
+		}
+		return entry;
+	};
+
+	/** A rated song with a score close to the new song's (random among the closest), not used against it yet */
+	const pickOpponent = () => {
+		const song = current();
+		if (song === undefined || duelState === undefined) return;
+		const target = scoreOf(song.id).score;
+		const rated = ratedTracks();
+		let candidates = [...rated.keys()].filter((id) => id !== song.id && !duelState!.used.has(id));
+		if (candidates.length === 0) candidates = [...rated.keys()].filter((id) => id !== song.id && id !== duelState!.opponentId);
+		const closest = candidates
+			.map((id) => ({ id, distance: Math.abs((scores.get(id)?.score ?? rated.get(id)!) - target) }))
+			.sort((a, b) => a.distance - b.distance)
+			.slice(0, 6);
+		const pick = closest[Math.floor(Math.random() * closest.length)];
+		duelState.opponentId = pick?.id;
+		if (pick) duelState.used.add(pick.id);
+	};
+
+	const coverUrl = (uuid?: string | null) => (uuid ? ContentBase.formatCoverUrl(uuid, { res: "320" }) : undefined);
+
+	const renderDuel = () => {
+		const on = gameOn();
+		duel.hidden = !on;
+		starsRow.hidden = on;
+		cover.hidden = title.hidden = sub.hidden = on;
+		const song = current();
+		if (!on || song === undefined) return;
+		leftCard.coverBtn.style.backgroundImage = song.cover ? `url("${song.cover}")` : "";
+		leftCard.name.textContent = song.title;
+		leftCard.artist.textContent = song.artist;
+		const opponentId = duelState?.opponentId;
+		const meta = opponentId ? getTrackMeta(opponentId) : undefined;
+		const opponentCover = coverUrl(meta?.cover);
+		rightCard.coverBtn.style.backgroundImage = opponentCover ? `url("${opponentCover}")` : "";
+		rightCard.name.textContent = meta?.title ?? (opponentId ? `Track ${opponentId}` : "No song to compare with");
+		rightCard.artist.textContent = meta?.artistNames ?? "";
+		const games = duelState?.games ?? 0;
+		duelInfo.textContent = games === 0 ? "Duel 1" : `Duel ${games + 1} · so far around ${stars(toRating(scoreOf(song.id).score))}`;
+		renderListen();
+	};
+
+	/** New duels for the current song, starting in the middle of the scale */
+	const startDuel = () => {
+		const song = current();
+		duelState = gameOn() && song ? { used: new Set(), games: 0, lastMove: Infinity } : undefined;
+		if (duelState && song) {
+			scoreOf(song.id);
+			pickOpponent();
+		}
+		renderDuel();
+	};
+
+	/** result: 1 = the song being rated wins, 0 = the rated song wins, 0.5 = can't decide */
+	const choose = (result: number) => {
+		const song = current();
+		if (song === undefined || duelState?.opponentId === undefined || picking || advancing) return;
+		const mine = scoreOf(song.id);
+		const theirs = scoreOf(duelState.opponentId);
+		const surprise = result - expected(mine.score, theirs.score);
+		const move = newSongStep(mine.games) * surprise;
+		mine.score = clampScore(mine.score + move);
+		theirs.score = clampScore(theirs.score - RATED_STEP * surprise);
+		mine.games++;
+		theirs.games++;
+		duelState.games++;
+		duelState.lastMove = Math.abs(move);
+		if ((duelState.games >= MIN_DUELS && duelState.lastMove < SETTLED) || duelState.games >= MAX_DUELS) {
+			const rating = toRating(mine.score);
+			// From now on it's a rated song: it only moves slowly, and only counts as "moved" after new duels
+			mine.rated = rating;
+			mine.games = 0;
+			return rate(rating);
+		}
+		pickOpponent();
+		renderDuel();
+		// The new opponent is the song you haven't heard yet: play it
+		playOpponent();
+	};
+
+	/** Listening to the rated song; `position`: where the song being rated was */
+	let listening: { id: string; position: number; started: boolean } | undefined;
+
+	const setBadge = (badge: HTMLElement, icon: string) => {
+		if (badge.dataset.icon === icon) return;
+		badge.dataset.icon = icon;
+		badge.innerHTML = `<svg viewBox="0 0 24 24"><use href="#${icon}"></use></svg>`;
+	};
+	/** Outline and pause icon on the side that's playing */
+	const renderListen = () => {
+		const right = listening !== undefined;
+		leftCard.card.toggleAttribute("data-playing", !right);
+		rightCard.card.toggleAttribute("data-playing", right);
+		setBadge(leftCard.playBadge, !right && PlayState.playing ? "player__pause" : "player__play");
+		setBadge(rightCard.playBadge, right && PlayState.playing ? "player__pause" : "player__play");
+	};
+
+	/** Plays a track and seeks once it actually plays (seconds, or "start" for the configured start point) */
+	const playAt = async (id: string, seconds: number | "start", onPlaying?: () => void) => {
+		const myGeneration = ++generation;
+		const item = await MediaItem.fromId(id).catch(() => undefined);
+		if (myGeneration !== generation || !active || item === undefined) return;
+		item.play();
+		const startedAt = Date.now();
+		const seekWhenReady = () => {
+			if (myGeneration !== generation || !active) return;
+			if (String(PlayState.playbackContext?.actualProductId) === id && PlayState.currentTime > 0) {
+				const duration = PlayState.playbackContext?.actualDuration ?? 0;
+				const target = seconds === "start" ? duration * startAt() : seconds;
+				if (target > 0) PlayState.seek(Math.floor(target));
+				onPlaying?.();
+				return;
+			}
+			if (Date.now() - startedAt < 10_000) setTimeout(seekWhenReady, 150);
+		};
+		setTimeout(seekWhenReady, 150);
+	};
+
+	/** Back to the song being rated, where it was */
+	const backToSong = () => {
+		const song = current();
+		if (song === undefined || listening === undefined) return;
+		const { position } = listening;
+		listening = undefined;
+		renderListen();
+		started = false;
+		playAt(song.id, position > 0 ? position : "start", () => (started = true));
+	};
+
+	/** Cover click / A / D: play that side; the side that's already playing pauses / resumes */
+	const listenTo = (side: "left" | "right") => {
+		const song = current();
+		if (song === undefined || picking || advancing) return;
+		if (side === "left") return listening !== undefined ? backToSong() : togglePlay();
+		if (listening !== undefined) return togglePlay();
+		playOpponent();
+	};
+
+	/** Plays the right song from its start point; the left song's position is kept for going back */
+	const playOpponent = () => {
+		const song = current();
+		const opponentId = duelState?.opponentId;
+		if (song === undefined || opponentId === undefined) return;
+		const position =
+			listening?.position ?? (String(PlayState.playbackContext?.actualProductId) === song.id ? PlayState.currentTime : 0);
+		const target = { id: opponentId, position, started: false };
+		listening = target;
+		// The song being rated stops on purpose: not "ended"
+		started = false;
+		renderListen();
+		playAt(opponentId, "start", () => (target.started = true));
+	};
+
+	const toggleGame = () => {
+		if (gameBtn.disabled) return;
+		settings.rateGame = !settings.rateGame;
+		updateGameButton();
+		if (advancing) return;
+		if (listening !== undefined) backToSong();
+		startDuel();
+	};
 	// #endregion
 
 	const updateShuffle = () => {
@@ -353,6 +616,10 @@ export const startRatingMode = async (source: RateSource) => {
 		started = false;
 		starRow.setValue(0);
 		starRow.setInteractive(true);
+		listening = undefined;
+		// Ratings change while you rate: the duel button may have just become available
+		updateGameButton();
+		startDuel();
 		total.textContent = formatTime(song.duration);
 		playCurrent();
 	};
@@ -370,7 +637,25 @@ export const startRatingMode = async (source: RateSource) => {
 		generation++;
 		cleanup();
 		await saving;
+		// Duels can move rated songs: ones that ended up in another half-star bracket get the new rating
+		const moved: string[] = [];
+		for (const [id, entry] of scores) {
+			if (entry.rated === undefined || entry.games < 2) continue;
+			const rating = toRating(entry.score);
+			if (rating === entry.rated) continue;
+			const name = getTrackMeta(id)?.title ?? `track ${id}`;
+			moved.push(`“${name}” ${stars(entry.rated)} → ${stars(rating)}`);
+			saving = saving
+				.then(() => applyRating(id, rating))
+				.catch((err) => {
+					failed++;
+					trace.err.withContext(`Failed to move “${name}” to ${rating}★`)(err as Error);
+				});
+		}
+		await saving;
+		if (moved.length > 0) trace.log(`Duels moved ${moved.length} rated song${moved.length === 1 ? "" : "s"}:\n  • ${moved.join("\n  • ")}`);
 		const parts = [`Rated ${rated} song${rated === 1 ? "" : "s"} in “${source.title ?? source.type}”.`];
+		if (moved.length > 0) parts.push(`${moved.length} rated song${moved.length === 1 ? "" : "s"} moved to another rating (see console).`);
 		if (skipped > 0) parts.push(`Skipped ${skipped}.`);
 		if (early && index < order.length - 1) parts.push(`${order.length - index - 1} left unrated.`);
 		if (failed > 0) parts.push(`${failed} rating${failed === 1 ? "" : "s"} couldn't be saved (see console).`);
@@ -437,7 +722,11 @@ export const startRatingMode = async (source: RateSource) => {
 		const match = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
 		return match ? Number(match[1]) : undefined;
 	};
-	const ourKey = (e: KeyboardEvent) => digitOf(e) !== undefined || e.code === "KeyS" || e.key === "ArrowRight" || e.key === "Escape";
+	const DUEL_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowDown", "KeyA", "KeyD"]);
+	const ourKey = (e: KeyboardEvent) =>
+		gameOn()
+			? DUEL_KEYS.has(e.code) || e.code === "KeyS" || e.key === "Escape"
+			: digitOf(e) !== undefined || e.code === "KeyS" || e.key === "ArrowRight" || e.key === "Escape";
 
 	const onKey = (e: KeyboardEvent) => {
 		// The playlist picker handles its own keys
@@ -446,6 +735,13 @@ export const startRatingMode = async (source: RateSource) => {
 		e.preventDefault();
 		e.stopImmediatePropagation();
 		if (e.type !== "keydown" || e.repeat) return;
+		if (gameOn() && DUEL_KEYS.has(e.code)) {
+			if (e.code === "ArrowLeft") choose(1);
+			else if (e.code === "ArrowRight") choose(0);
+			else if (e.code === "ArrowDown") choose(0.5);
+			else listenTo(e.code === "KeyA" ? "left" : "right");
+			return;
+		}
 		const digit = digitOf(e);
 		if (digit !== undefined) {
 			// Shift adds a half star (Shift+3 = 3.5)
@@ -491,6 +787,23 @@ export const startRatingMode = async (source: RateSource) => {
 		const song = current();
 		if (song === undefined) return;
 
+		// Listening to the comparison song: show its progress, and go back when it ends
+		if (listening !== undefined) {
+			const playingRef = String(PlayState.playbackContext?.actualProductId) === listening.id;
+			const duration = playingRef ? (PlayState.playbackContext?.actualDuration ?? 0) : 0;
+			const finished = !PlayState.playing && duration > 0 && PlayState.currentTime >= duration - 1;
+			if (listening.started && (!playingRef || finished)) return backToSong();
+			const position = playingRef ? PlayState.currentTime : 0;
+			time.textContent = formatTime(position);
+			total.textContent = formatTime(duration);
+			fill.style.width = `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%`;
+			setPlayIcon(PlayState.playing);
+			if (gameOn()) renderListen();
+			syncVolume();
+			return;
+		}
+		total.textContent = formatTime(song.duration);
+
 		// Song ran to its end: TIDAL moved on to its own queue (or stopped). Count it as skipped and play our next one
 		if (started && !advancing && !picking) {
 			const movedOn = String(PlayState.playbackContext?.actualProductId) !== song.id;
@@ -507,6 +820,7 @@ export const startRatingMode = async (source: RateSource) => {
 		time.textContent = formatTime(position);
 		fill.style.width = `${song.duration > 0 ? Math.min(100, (position / song.duration) * 100) : 0}%`;
 		setPlayIcon(PlayState.playing);
+		if (gameOn()) renderListen();
 		syncVolume();
 	}, 250);
 
@@ -527,6 +841,7 @@ export const startRatingMode = async (source: RateSource) => {
 	skipBtn.addEventListener("click", skip);
 	exitBtn.addEventListener("click", () => finish(true));
 	shuffleBtn.addEventListener("click", toggleShuffle);
+	gameBtn.addEventListener("click", toggleGame);
 	playBtn.addEventListener("click", togglePlay);
 	muteBtn.addEventListener("click", toggleMute);
 	volumeSlider.addEventListener("input", () => {
@@ -539,9 +854,11 @@ export const startRatingMode = async (source: RateSource) => {
 	for (const button of overlay.querySelectorAll("button")) button.addEventListener("mousedown", (e) => e.preventDefault());
 	bar.addEventListener("click", (e) => {
 		const song = current();
-		if (song === undefined || song.duration <= 0) return;
+		// While listening to the comparison song the bar is its progress
+		const duration = listening !== undefined ? (PlayState.playbackContext?.actualDuration ?? 0) : (song?.duration ?? 0);
+		if (song === undefined || duration <= 0) return;
 		const rect = bar.getBoundingClientRect();
-		PlayState.seek(Math.floor(((e.clientX - rect.left) / rect.width) * song.duration));
+		PlayState.seek(Math.floor(((e.clientX - rect.left) / rect.width) * duration));
 	});
 	window.addEventListener("keydown", onKey, true);
 	window.addEventListener("keyup", onKey, true);
@@ -589,6 +906,7 @@ export const startRatingMode = async (source: RateSource) => {
 			return;
 		}
 		order = settings.rateShuffle ? shuffled(original) : [...original];
+		updateGameButton();
 		next();
 	} catch (err) {
 		active = false;

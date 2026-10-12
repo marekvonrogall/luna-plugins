@@ -23,7 +23,7 @@ const notify = () => {
 export const ratingsVersion = () => changes;
 
 /** Album and artists of every rated song, so averages per album / artist need no extra requests */
-type TrackMeta = { album?: string; albumTitle?: string; artists: string[]; songKey: string; title: string };
+type TrackMeta = { album?: string; albumTitle?: string; artists: string[]; artistNames: string; cover?: string; songKey: string; title: string };
 const trackMeta = new Map<string, TrackMeta>();
 
 /** Words that mark a " - …" title suffix as a version (e.g. "Song - Live at Wembley"), not part of the name */
@@ -51,6 +51,8 @@ const rememberTrack = (item: redux.MediaItem["item"] | undefined) => {
 		album: item.album?.id === undefined ? undefined : String(item.album.id),
 		albumTitle: item.album?.title ?? undefined,
 		artists: (item.artists ?? []).map((artist) => String(artist.id)),
+		artistNames: (item.artists ?? []).map((artist) => artist.name).join(", "),
+		cover: item.album?.cover ?? undefined,
 		songKey: songKey(item.title ?? "", version),
 		title: displayTitle(item.title ?? "", version),
 	});
