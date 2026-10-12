@@ -4,6 +4,7 @@ import { addPlaylistPickerStyles } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
 import { RATE_MODE_CSS, startRatingMode } from "./rateMode";
 import { FAVORITES_RATE_CSS, setupRateButton } from "./rateButton";
+import { COVER_BADGE_CSS, setupCoverBadges } from "./coverBadges";
 import { RATING_COLUMN_CSS, setupRatingColumn } from "./ratingColumn";
 import { isSaving, rateTrack, ratingListeners, refreshRatings, refreshRatingsIfStale, shownRating, validateRatingPlaylists } from "./ratings";
 import { createStarRow, STAR_ROW_CSS, type StarRow } from "./starRow";
@@ -30,7 +31,7 @@ new StyleTag(
 `,
 );
 addPlaylistPickerStyles("Comité", unloads);
-new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS + RATING_COLUMN_CSS);
+new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS + RATING_COLUMN_CSS + COVER_BADGE_CSS);
 
 let currentTrackId: string | undefined;
 
@@ -130,6 +131,7 @@ ratingListeners.add(render);
 
 setupRateButton(unloads, startRatingMode);
 setupRatingColumn(unloads);
+setupCoverBadges(unloads);
 observe(unloads, "#footerPlayer", loadComité);
 loadComité();
 MediaItem.onMediaTransition(unloads, onTrack);

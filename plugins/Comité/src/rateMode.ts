@@ -4,13 +4,14 @@ import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems, getMixItems } from "./api";
 import { trace, unloads } from "./core";
-import { applyRating, assignRatingPlaylist, playlistsForRating, ratingOf, refreshRatings } from "./ratings";
+import { applyRating, assignRatingPlaylist, playlistsForRating, ratingOf, refreshRatings, sameSongRatings, songKey } from "./ratings";
+import { fetchCoverBase64 } from "./cover.native";
 import { createStarRow } from "./starRow";
 import { getRatingPlaylist, settings, stars } from "./store";
 
 export type RateSource = { type: "album" | "playlist" | "favorites" | "artist" | "mix"; id: string; title?: string };
 
-type Song = { id: string; title: string; artist: string; album: string; cover?: string; duration: number };
+type Song = { id: string; title: string; artist: string; artistIds: string[]; songKey: string; album: string; cover?: string; duration: number };
 
 const OVERLAY = "comite-rate-mode";
 /** Songs start here, so you hear more than the intro */
@@ -25,7 +26,7 @@ export const RATE_MODE_CSS = `
 .comite-rm-heading b { color: #fff; }
 .comite-rm-actions { display: flex; align-items: center; gap: 10px; }
 .comite-rm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #fff; font-size: 13px; cursor: pointer; }
-.comite-rm-chip[aria-pressed="true"] { border-color: #ffd432; color: #ffd432; }
+.comite-rm-chip[aria-pressed="true"] { border-color: var(--comite-accent, #ffd432); color: var(--comite-accent, #ffd432); transition: color 0.3s, border-color 0.3s; }
 .comite-rm-chip svg { width: 16px; height: 16px; fill: currentColor; }
 /* Drawn on a 16-unit grid (close icon: 24), so it needs a smaller box to look the same size */
 .comite-rm-chip svg.comite-rm-shuffle-icon { width: 11px; height: 11px; position: relative; top: 1px; }
@@ -34,17 +35,20 @@ export const RATE_MODE_CSS = `
 .comite-rm-cover { width: min(300px, 38vh); aspect-ratio: 1; border-radius: 12px; background: #222 center / cover no-repeat; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
 .comite-rm-title { max-width: min(640px, 90vw); font-size: 24px; font-weight: 700; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .comite-rm-sub { max-width: min(640px, 90vw); margin-top: -8px; font-size: 14px; color: #b0b0b8; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.comite-rm-stars { margin-top: 10px; --star-size: 56px; --star-gap: 14px; --star-color: #ffd432; --star-dim-color: rgba(255, 255, 255, 0.35); --star-dim-opacity: 1; }
+.comite-rm-stars { margin-top: 10px; --star-size: 56px; --star-gap: 14px; --star-color: var(--comite-accent, #ffd432); --star-dim-color: rgba(255, 255, 255, 0.35); --star-dim-opacity: 1; }
 .comite-rm-stars .comite-starbtn:hover { transform: scale(1.12); }
 .comite-rm-stars.rated .comite-starbtn:not([data-fill="0"]) { animation: comite-pop 0.3s ease-out; }
 @keyframes comite-pop { 50% { transform: scale(1.3); } }
+.comite-rm-same { max-width: min(640px, 90vw); padding: 6px 14px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: #dcdce2; font-weight: 600; font-size: 13px; text-align: center; }
+.comite-rm-same[hidden] { display: none; }
 .comite-rm-message { min-height: 18px; font-size: 13px; color: #b0b0b8; text-align: center; }
 .comite-rm-bottom { display: flex; flex-direction: column; gap: 10px; padding: 0 28px 24px; }
 .comite-rm-progress { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #b0b0b8; font-variant-numeric: tabular-nums; }
 .comite-rm-bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); cursor: pointer; }
 .comite-rm-fill { width: 0%; height: 100%; border-radius: 2px; background: #fff; }
 .comite-rm-controls { position: relative; display: flex; align-items: center; justify-content: space-between; }
-.comite-rm-play { width: 44px; height: 44px; border: none; border-radius: 50%; background: #fff; color: #000; font-size: 18px; cursor: pointer; }
+.comite-rm-play { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: #fff; color: #000; cursor: pointer; }
+.comite-rm-play svg { width: 18px; height: 18px; fill: currentColor; }
 .comite-rm-left { display: flex; align-items: center; gap: 14px; }
 .comite-rm-volume { display: flex; align-items: center; gap: 8px; }
 .comite-rm-mute { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; background: none; color: #fff; cursor: pointer; }
@@ -73,6 +77,8 @@ const toSong = (item: redux.MediaItem): Song | undefined => {
 		id: String(track.id),
 		title: track.version ? `${track.title} (${track.version})` : track.title,
 		artist: track.artists?.map((a) => a.name).join(", ") || track.artist?.name || "",
+		artistIds: (track.artists ?? []).map((a) => String(a.id)),
+		songKey: songKey(track.title ?? "", track.version),
 		album: track.album?.title ?? "",
 		cover: ContentBase.formatCoverUrl(track.album?.cover ?? undefined, { res: "640" }),
 		duration: track.duration ?? 0,
@@ -86,6 +92,73 @@ const shuffled = <T>(items: T[]) => {
 		[result[i], result[j]] = [result[j], result[i]];
 	}
 	return result;
+};
+
+/** RGB (0-255) to HSL (0-1) */
+const toHsl = (r: number, g: number, b: number) => {
+	r /= 255;
+	g /= 255;
+	b /= 255;
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const l = (max + min) / 2;
+	if (max === min) return { h: 0, s: 0, l };
+	const d = max - min;
+	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+	const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+	return { h: h / 6, s, l };
+};
+
+const coverColors = new Map<string, Promise<string | undefined>>();
+
+/**
+ * Most prominent colourful hue of a cover, brightened so stars stay visible on the dark overlay.
+ * Undefined for grey covers or if the image couldn't be loaded (then the stars stay gold).
+ */
+const coverColor = (url: string) => {
+	let promise = coverColors.get(url);
+	if (promise !== undefined) return promise;
+	promise = new Promise<string | undefined>((resolve) => {
+		const img = new Image();
+		img.onerror = () => resolve(undefined);
+		img.onload = () => {
+			try {
+				const size = 24;
+				const canvas = document.createElement("canvas");
+				canvas.width = canvas.height = size;
+				const context = canvas.getContext("2d");
+				if (context === null) return resolve(undefined);
+				context.drawImage(img, 0, 0, size, size);
+				const data = context.getImageData(0, 0, size, size).data;
+				// 12 hue buckets, weighted towards saturated mid-tones
+				const buckets = Array.from({ length: 12 }, () => ({ r: 0, g: 0, b: 0, weight: 0 }));
+				for (let i = 0; i < data.length; i += 4) {
+					const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
+					const { h, s, l } = toHsl(r, g, b);
+					if (s < 0.2 || l < 0.12 || l > 0.92) continue;
+					const weight = s * (1 - Math.abs(l - 0.5) * 2);
+					const bucket = buckets[Math.min(11, Math.floor(h * 12))];
+					bucket.r += r * weight;
+					bucket.g += g * weight;
+					bucket.b += b * weight;
+					bucket.weight += weight;
+				}
+				const best = buckets.reduce((a, b) => (b.weight > a.weight ? b : a));
+				// Too little colour (black & white covers): keep gold
+				if (best.weight < size * size * 0.03) return resolve(undefined);
+				const { h, s, l } = toHsl(best.r / best.weight, best.g / best.weight, best.b / best.weight);
+				resolve(`hsl(${Math.round(h * 360)}, ${Math.round(Math.max(s, 0.5) * 100)}%, ${Math.round(Math.min(Math.max(l, 0.62), 0.75) * 100)}%)`);
+			} catch {
+				resolve(undefined);
+			}
+		};
+		// Loaded as a data URL so the canvas may read its pixels
+		fetchCoverBase64(url)
+			.then((base64) => (base64 === undefined ? resolve(undefined) : (img.src = `data:image/jpeg;base64,${base64}`)))
+			.catch(() => resolve(undefined));
+	});
+	coverColors.set(url, promise);
+	return promise;
 };
 
 const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
@@ -125,8 +198,11 @@ export const startRatingMode = async (source: RateSource) => {
 	const starRow = createStarRow((value) => rate(value), "★");
 	const starsRow = starRow.element;
 	starsRow.classList.add("comite-rm-stars");
+	// Same song already rated on another release (single vs. album)
+	const sameHint = el("div", "comite-rm-same", "");
+	sameHint.hidden = true;
 	const message = el("div", "comite-rm-message", "");
-	center.append(cover, title, sub, starsRow, message);
+	center.append(cover, title, sub, starsRow, sameHint, message);
 
 	const bottom = el("div", "comite-rm-bottom");
 	const progress = el("div", "comite-rm-progress");
@@ -137,7 +213,16 @@ export const startRatingMode = async (source: RateSource) => {
 	const total = el("span", "", "0:00");
 	progress.append(time, bar, total);
 	const controls = el("div", "comite-rm-controls");
-	const playBtn = el("button", "comite-rm-play", "❚❚");
+	const playBtn = el("button", "comite-rm-play");
+	// TIDAL's own play / pause icons
+	const setPlayIcon = (playing: boolean) => {
+		const icon = playing ? "pause" : "play";
+		if (playBtn.dataset.icon === icon) return;
+		playBtn.dataset.icon = icon;
+		playBtn.innerHTML = `<svg class="_icon_77f3f89" data-test="icon--player__${icon}" viewBox="0 0 24 24"><use href="#player__${icon}"></use></svg>`;
+		playBtn.ariaLabel = playing ? "Pause" : "Play";
+	};
+	setPlayIcon(true);
 	const volume = el("div", "comite-rm-volume");
 	const muteBtn = el("button", "comite-rm-mute");
 	muteBtn.title = "Mute";
@@ -240,8 +325,23 @@ export const startRatingMode = async (source: RateSource) => {
 		counter.textContent = ` · ${index + 1} / ${order.length}`;
 		backdrop.style.backgroundImage = song.cover ? `url("${song.cover}")` : "";
 		cover.style.backgroundImage = song.cover ? `url("${song.cover}")` : "";
+		// Stars and the Shuffle chip take the cover's main colour (gold until it's known, or if the cover has none)
+		overlay.style.removeProperty("--comite-accent");
+		if (song.cover) {
+			const shownId = song.id;
+			coverColor(song.cover.replace(/\d+x\d+(\.\w+)$/, "80x80$1")).then((color) => {
+				if (color !== undefined && current()?.id === shownId) overlay.style.setProperty("--comite-accent", color);
+			});
+		}
 		title.textContent = song.title;
 		sub.textContent = [song.artist, song.album].filter(Boolean).join(" · ");
+		const same = sameSongRatings(song.id, song.songKey, song.artistIds);
+		sameHint.hidden = same.length === 0;
+		sameHint.textContent = same
+			.slice(0, 3)
+			.map(({ rating, albumTitle }) => `Rated ${stars(rating)} (${rating}) on ${albumTitle ? `“${albumTitle}”` : "another release"}`)
+			.join(" · ");
+		sameHint.title = "You already rated this song on another release (e.g. the single and the album)";
 		message.textContent = "";
 		starsRow.classList.remove("rated");
 		started = false;
@@ -400,7 +500,7 @@ export const startRatingMode = async (source: RateSource) => {
 		const position = String(PlayState.playbackContext?.actualProductId) === song.id ? PlayState.currentTime : 0;
 		time.textContent = formatTime(position);
 		fill.style.width = `${song.duration > 0 ? Math.min(100, (position / song.duration) * 100) : 0}%`;
-		playBtn.textContent = PlayState.playing ? "❚❚" : "▶";
+		setPlayIcon(PlayState.playing);
 		syncVolume();
 	}, 250);
 

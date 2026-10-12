@@ -10,16 +10,20 @@ const WIDTH = 104;
 const ROW_SELECTOR = '[data-test="tracklist-row"]';
 const HEADER_SELECTOR = '[role="row"][class*="_tableHeader_"]';
 const CONTEXT_SELECTOR = ':scope > [class*="_contextColumn_"]';
+/** Artist pages ("Top Tracks") use a real <table> with different markup */
+const TABLE_ROW_SELECTOR = 'tr[data-test^="tracklist-row"]';
 
 /**
  * Fixed width like BPM / Key. Shown only while every other column still gets its full width,
  * so artist and the heart column keep priority. Empty stars stay faint until the row is hovered.
  */
 export const RATING_COLUMN_CSS = `
-.${CELL}, .${HEADER} { flex: 0 0 ${WIDTH}px !important; padding-right: 16px !important; }
-.${CELL} { display: flex; align-items: center; --star-size: 15px; --star-gap: 1px; --star-dim-opacity: 0.2; }
+.${CELL}:not(td), .${HEADER}:not(th) { flex: 0 0 ${WIDTH}px !important; padding-right: 16px !important; }
+.${CELL}:not(td) { display: flex; align-items: center; }
+td.${CELL}, th.${HEADER} { width: ${WIDTH - 16}px; padding: 0 16px; white-space: nowrap; vertical-align: middle; text-align: left; }
+.${CELL} { --star-size: 15px; --star-gap: 1px; --star-dim-opacity: 0.2; }
 .${CELL}[${HIDDEN}], .${HEADER}[${HIDDEN}] { display: none !important; }
-${ROW_SELECTOR}:is(:hover, :focus-within) .${CELL} { --star-dim-opacity: 0.5; }
+:is(${ROW_SELECTOR}, ${TABLE_ROW_SELECTOR}):is(:hover, :focus-within) .${CELL} { --star-dim-opacity: 0.5; }
 @media (width <= 576px) { .${CELL}, .${HEADER} { display: none !important; } }
 `;
 
@@ -38,6 +42,7 @@ const fits = (row: HTMLElement) => {
 };
 
 const fit = (cell: HTMLElement) => {
+	if (cell.tagName === "TD" || cell.tagName === "TH") return;
 	const row = cell.parentElement;
 	if (row) cell.toggleAttribute(HIDDEN, !fits(row));
 };
@@ -53,8 +58,8 @@ const paintCell = (cell: HTMLElement) => {
 	row.setDisabled(isSaving(trackId));
 };
 
-const createCell = () => {
-	const cell = document.createElement("div");
+const createCell = (tag: "div" | "td" = "div") => {
+	const cell = document.createElement(tag);
 	cell.className = CELL;
 	cell.setAttribute("role", "cell");
 	const row = createStarRow((value) => {
@@ -91,8 +96,93 @@ const createHeader = (header: HTMLElement) => {
 	return cell;
 };
 
+/** Tables can't use flex bases: the column hides once artist or the buttons get cut off, and returns only when the table is wider than at that moment */
+type TableState = { hidden: boolean; hideBelow: number };
+const tableStates = new WeakMap<HTMLTableElement, TableState>();
+const tables = new Set<HTMLTableElement>();
+let tableResize: ResizeObserver | undefined;
+
+const squeezed = (table: HTMLTableElement) => {
+	for (const cell of table.querySelectorAll<HTMLElement>('td[class*="_artistColumn_"], td[class*="_buttonColumn_"]')) {
+		const inner = cell.firstElementChild;
+		const target = inner instanceof HTMLElement && getComputedStyle(inner).display !== "inline" ? inner : cell;
+		if (target.scrollWidth > target.clientWidth + 1 || target.scrollHeight > target.clientHeight + 1) return true;
+	}
+	return false;
+};
+
+const setTableHidden = (table: HTMLTableElement, hidden: boolean) =>
+	table.querySelectorAll(`.${CELL}, .${HEADER}`).forEach((element) => element.toggleAttribute(HIDDEN, hidden));
+
+const fitTable = (table: HTMLTableElement) => {
+	let state = tableStates.get(table);
+	if (state === undefined) tableStates.set(table, (state = { hidden: false, hideBelow: 0 }));
+	const width = table.clientWidth;
+	if (state.hidden && width >= state.hideBelow) state.hidden = false;
+	setTableHidden(table, state.hidden);
+	if (!state.hidden && squeezed(table)) {
+		state.hidden = true;
+		state.hideBelow = width + 1;
+		setTableHidden(table, true);
+	}
+};
+
+const tableTrackId = (row: HTMLElement) => {
+	for (const element of row.querySelectorAll<HTMLElement>('[data-test^="image-container-track-"], [data-test^="tracklist-id-"]')) {
+		const match = /\d+/.exec(element.dataset.test ?? "");
+		if (match) return match[0];
+	}
+	return undefined;
+};
+
+/** Header cell for the table: a copy of TIDAL's TIME header with a new label */
+const createTableHeader = (headerRow: HTMLTableRowElement) => {
+	const source = headerRow.querySelector<HTMLElement>(':scope > th[class*="_timeColumn_"]') ?? [...headerRow.querySelectorAll<HTMLElement>(":scope > th")].find((th) => th.textContent?.trim());
+	const cell = document.createElement("th");
+	cell.className = HEADER;
+	const label = source?.firstElementChild?.cloneNode(false) as HTMLElement | undefined;
+	if (label) {
+		label.textContent = "RATING";
+		cell.appendChild(label);
+	} else cell.textContent = "RATING";
+	return cell;
+};
+
+const syncTables = () => {
+	const changed = new Set<HTMLTableElement>();
+	for (const row of document.querySelectorAll<HTMLElement>(TABLE_ROW_SELECTOR)) {
+		const trackId = tableTrackId(row);
+		const table = row.closest("table");
+		if (trackId === undefined || table === null) continue;
+		let cell = row.querySelector<HTMLElement>(`:scope > .${CELL}`);
+		if (cell === null) {
+			cell = createCell("td");
+			row.insertBefore(cell, row.querySelector(':scope > td[class*="_buttonColumn_"]') ?? row.lastElementChild);
+			changed.add(table);
+		}
+		if (cell.dataset.trackId !== trackId) {
+			cell.dataset.trackId = trackId;
+			paintCell(cell);
+		}
+	}
+	for (const table of changed) {
+		const headerRow = table.querySelector<HTMLTableRowElement>("thead tr");
+		if (headerRow && !headerRow.querySelector(`:scope > .${HEADER}`)) headerRow.insertBefore(createTableHeader(headerRow), headerRow.lastElementChild);
+		if (!tables.has(table)) {
+			tables.add(table);
+			tableResize?.observe(table);
+		}
+		fitTable(table);
+	}
+	for (const table of tables) if (!table.isConnected) {
+		tables.delete(table);
+		tableResize?.unobserve(table);
+	}
+};
+
 /** Adds missing cells and updates rows the virtual list reused for another song */
 const sync = () => {
+	syncTables();
 	for (const header of document.querySelectorAll<HTMLElement>(HEADER_SELECTOR)) {
 		if (header.querySelector(`:scope > .${HEADER}`)) continue;
 		const cell = createHeader(header);
@@ -129,6 +219,13 @@ export const setupRatingColumn = (unloads: LunaUnloads) => {
 			document.querySelectorAll<HTMLElement>(`.${CELL}, .${HEADER}`).forEach(fit);
 		});
 	});
+	let tableFrame = 0;
+	tableResize = new ResizeObserver(() => {
+		tableFrame ||= requestAnimationFrame(() => {
+			tableFrame = 0;
+			tables.forEach(fitTable);
+		});
+	});
 	let watched: Element | null = null;
 	const watch = () => {
 		if (watched?.isConnected) return;
@@ -153,6 +250,10 @@ export const setupRatingColumn = (unloads: LunaUnloads) => {
 	unloads.add(() => {
 		observer.disconnect();
 		resizeObserver.disconnect();
+		tableResize?.disconnect();
+		tableResize = undefined;
+		tables.clear();
+		cancelAnimationFrame(tableFrame);
 		cancelAnimationFrame(frame);
 		cancelAnimationFrame(resizeFrame);
 		ratingListeners.delete(repaint);

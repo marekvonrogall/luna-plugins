@@ -1,4 +1,7 @@
-import { addTrack, getPlaylistInfo, waitForLogin, getPlaylistTrackIds, getUserPlaylists, refreshPlaylistView, removeTrack } from "./api";
+import { redux } from "@luna/lib";
+
+import { fetchPlaylistItems } from "../../../shared/playlistItems";
+import { addTrack, getPlaylistInfo, getUserPlaylists, refreshPlaylistView, removeTrack, waitForLogin } from "./api";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
 import { getRatingPlaylist, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
@@ -11,7 +14,59 @@ let loading: Promise<void> | undefined;
 
 /** Called whenever the cached ratings changed, so the stars can re-render */
 export const ratingListeners = new Set<() => void>();
-const notify = () => ratingListeners.forEach((listener) => listener());
+let changes = 0;
+const notify = () => {
+	changes++;
+	ratingListeners.forEach((listener) => listener());
+};
+/** Changes whenever any rating changed */
+export const ratingsVersion = () => changes;
+
+/** Album and artists of every rated song, so averages per album / artist need no extra requests */
+type TrackMeta = { album?: string; albumTitle?: string; artists: string[]; songKey: string };
+const trackMeta = new Map<string, TrackMeta>();
+
+/** Name used to spot the same song on another release: ignores case, punctuation, features and "album / single version" / "remastered" */
+export const songKey = (title: string, version?: string | null) =>
+	`${title} ${version ?? ""}`
+		.toLowerCase()
+		.replace(/[([](?:feat|ft|with)\.?\s[^)\]]*[)\]]/g, " ")
+		.replace(/\b(?:album|single|original) version\b|\bremaster(?:ed)?(?: \d{4})?\b|\b\d{4} remaster(?:ed)?\b/g, " ")
+		.replace(/[^\p{L}\p{N}]+/gu, " ")
+		.trim();
+
+const rememberTrack = (item: redux.MediaItem["item"] | undefined) => {
+	if (item === undefined) return;
+	const version = "version" in item ? (item.version as string | null | undefined) : undefined;
+	trackMeta.set(String(item.id), {
+		album: item.album?.id === undefined ? undefined : String(item.album.id),
+		albumTitle: item.album?.title ?? undefined,
+		artists: (item.artists ?? []).map((artist) => String(artist.id)),
+		songKey: songKey(item.title ?? "", version),
+	});
+};
+export const getTrackMeta = (trackId: string) => trackMeta.get(trackId);
+
+/** Rated songs (other than `trackId`) with the same name and at least one shared artist, e.g. a single re-released on an album */
+export const sameSongRatings = (trackId: string, key: string, artistIds: string[]) => {
+	const artists = new Set(artistIds);
+	const matches: { trackId: string; rating: number; albumTitle?: string }[] = [];
+	if (key === "") return matches;
+	for (const [id, rating] of ratedTracks()) {
+		if (id === trackId) continue;
+		const meta = trackMeta.get(id);
+		if (meta?.songKey !== key || !meta.artists.some((artist) => artists.has(artist))) continue;
+		matches.push({ trackId: id, rating, albumTitle: meta.albumTitle });
+	}
+	return matches;
+};
+
+/** Every rated song with its (highest) rating */
+export const ratedTracks = () => {
+	const all = new Map<string, number>();
+	for (const rating of RATINGS) for (const id of cache.get(rating) ?? []) all.set(id, rating);
+	return all;
+};
 
 /** Increases with every load per rating, so an older load that finishes late can't overwrite a newer one */
 const loadVersions = new Map<number, number>();
@@ -25,8 +80,13 @@ export const loadRating = async (rating: number) => {
 		notify();
 		return;
 	}
-	const ids = await getPlaylistTrackIds(playlist.uuid);
+	const items = await fetchPlaylistItems(playlist.uuid);
 	if (loadVersions.get(rating) !== version) return;
+	const ids = new Set<string>();
+	for (const { item } of items) {
+		ids.add(String(item.id));
+		rememberTrack(item);
+	}
 	cache.set(rating, ids);
 	notify();
 	trace.log(`${stars(rating)}: ${ids.size} songs from “${playlist.title}”`);
@@ -105,6 +165,7 @@ export const validateRatingPlaylists = async () => {
 /** Puts the track into the playlist of `rating` and removes it from the other rating playlists (0 = unrated) */
 export const applyRating = async (trackId: string, rating: number) => {
 	const target = rating === 0 ? undefined : getRatingPlaylist(rating);
+	if (!trackMeta.has(trackId)) rememberTrack(redux.store.getState().content.mediaItems[trackId]?.item);
 	if (target !== undefined) {
 		await addTrack(target.uuid, trackId);
 		if (!cache.has(rating)) cache.set(rating, new Set());

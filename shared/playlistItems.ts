@@ -19,12 +19,26 @@ const getPage = async (playlistUUID: string, offset: number): Promise<Page> => {
 	}
 };
 
+/** One page of a playlist (up to 100 items) plus the playlist's total item count, for callers that may stop early */
+export const fetchPlaylistPage = async (playlistUUID: string, offset: number) => {
+	const page = await getPage(playlistUUID, offset);
+	const items = page.items ?? [];
+	return { items, total: page.totalNumberOfItems ?? offset + items.length };
+};
+
 /** All items of a playlist, always fresh: Luna's TidalApi/Playlist cache the first response for the whole session */
 export const fetchPlaylistItems = async (playlistUUID: string): Promise<redux.MediaItem[]> => {
+	const result = await fetchPlaylistItemsUpTo(playlistUUID, Infinity);
+	return "items" in result ? result.items : [];
+};
+
+/** Like fetchPlaylistItems, but stops after the first page if the playlist has more than `maxItems` items */
+export const fetchPlaylistItemsUpTo = async (playlistUUID: string, maxItems: number): Promise<{ items: redux.MediaItem[] } | { tooMany: number }> => {
 	const first = await getPage(playlistUUID, 0);
 	const items = [...(first.items ?? [])];
 	const total = first.totalNumberOfItems ?? items.length;
-	if (items.length === 0 || items.length >= total) return items;
+	if (total > maxItems) return { tooMany: total };
+	if (items.length === 0 || items.length >= total) return { items };
 
 	const step = items.length; // server may cap the page size
 	const offsets: number[] = [];
@@ -40,5 +54,5 @@ export const fetchPlaylistItems = async (playlistUUID: string): Promise<redux.Me
 	};
 	await Promise.all(Array.from({ length: Math.min(CONCURRENCY, offsets.length) }, worker));
 	for (const page of pages) items.push(...page);
-	return items;
+	return { items };
 };

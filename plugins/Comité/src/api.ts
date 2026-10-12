@@ -109,7 +109,7 @@ const fetchPaged = async <T>(path: string, limit: number, what: string): Promise
 };
 
 /** Album ids of an artist's albums, EPs and singles ("appears on" compilations excluded), clean/explicit twins merged */
-export const getArtistAlbumIds = async (artistId: string): Promise<string[]> => {
+const getArtistReleases = async (artistId: string): Promise<redux.Album[]> => {
 	const [albums, singles] = await Promise.all([
 		fetchPaged<redux.Album>(`artists/${artistId}/albums`, 100, "Failed to load the artist's albums"),
 		fetchPaged<redux.Album>(`artists/${artistId}/albums?filter=EPSANDSINGLES`, 100, "Failed to load the artist's singles"),
@@ -121,8 +121,11 @@ export const getArtistAlbumIds = async (artistId: string): Promise<string[]> => 
 		const existing = releases.get(key);
 		if (existing === undefined || (!existing.explicit && album.explicit)) releases.set(key, album);
 	}
-	return [...releases.values()].map((album) => String(album.id));
+	return [...releases.values()];
 };
+
+export const getArtistAlbumIds = async (artistId: string) => (await getArtistReleases(artistId)).map((album) => String(album.id));
+
 
 /** All favorited (hearted) tracks, as media items */
 export const getFavoriteTrackItems = async (): Promise<redux.MediaItem[]> => {
@@ -151,8 +154,6 @@ export const getPlaylistInfo = async (uuid: string): Promise<{ title: string } |
 };
 
 /** Track ids in a playlist (fresh) */
-export const getPlaylistTrackIds = async (uuid: string) => new Set((await fetchPlaylistItems(uuid)).map((i) => String(i.item.id)));
-
 const getEtag = async (uuid: string) => {
 	const res = await request(withQuery(`playlists/${uuid}`));
 	if (!res.ok) throw failed("Failed to load playlist", res);
