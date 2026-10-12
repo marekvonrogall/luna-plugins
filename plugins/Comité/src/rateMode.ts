@@ -2,10 +2,11 @@ import { ContentBase, MediaItem, PlayState, redux } from "@luna/lib";
 
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { pickPlaylist } from "../../../shared/playlistPicker";
-import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems, getUserPlaylists } from "./api";
+import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems } from "./api";
 import { trace, unloads } from "./core";
-import { applyRating, loadRating, ratingOf, refreshRatings } from "./ratings";
-import { getRatingPlaylist, RATINGS, settings, setRatingPlaylist, stars } from "./store";
+import { applyRating, assignRatingPlaylist, playlistsForRating, ratingOf, refreshRatings } from "./ratings";
+import { createStarRow } from "./starRow";
+import { getRatingPlaylist, settings, stars } from "./store";
 
 export type RateSource = { type: "album" | "playlist" | "favorites" | "artist"; id: string; title?: string };
 
@@ -33,11 +34,9 @@ export const RATE_MODE_CSS = `
 .comite-rm-cover { width: min(300px, 38vh); aspect-ratio: 1; border-radius: 12px; background: #222 center / cover no-repeat; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
 .comite-rm-title { max-width: min(640px, 90vw); font-size: 24px; font-weight: 700; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .comite-rm-sub { max-width: min(640px, 90vw); margin-top: -8px; font-size: 14px; color: #b0b0b8; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.comite-rm-stars { display: flex; gap: 14px; margin-top: 10px; }
-.comite-rm-star { padding: 0; border: none; background: none; color: rgba(255, 255, 255, 0.35); font-size: 56px; line-height: 1; cursor: pointer; transition: color 0.12s, transform 0.12s; }
-.comite-rm-star.lit { color: #ffd432; }
-.comite-rm-star:hover { transform: scale(1.12); }
-.comite-rm-stars.rated .comite-rm-star.lit { animation: comite-pop 0.3s ease-out; }
+.comite-rm-stars { margin-top: 10px; --star-size: 56px; --star-gap: 14px; --star-color: #ffd432; --star-dim-color: rgba(255, 255, 255, 0.35); --star-dim-opacity: 1; }
+.comite-rm-stars .comite-starbtn:hover { transform: scale(1.12); }
+.comite-rm-stars.rated .comite-starbtn:not([data-fill="0"]) { animation: comite-pop 0.3s ease-out; }
 @keyframes comite-pop { 50% { transform: scale(1.3); } }
 .comite-rm-message { min-height: 18px; font-size: 13px; color: #b0b0b8; text-align: center; }
 .comite-rm-bottom { display: flex; flex-direction: column; gap: 10px; padding: 0 28px 24px; }
@@ -122,13 +121,10 @@ export const startRatingMode = async (source: RateSource) => {
 	const cover = el("div", "comite-rm-cover");
 	const title = el("div", "comite-rm-title", "Loading songs…");
 	const sub = el("div", "comite-rm-sub", "");
-	const starsRow = el("div", "comite-rm-stars");
-	const starButtons = RATINGS.map((rating) => {
-		const button = el("button", "comite-rm-star", "★");
-		button.title = `${stars(rating)} (${rating})`;
-		starsRow.appendChild(button);
-		return button;
-	});
+	// Left half of a star = half rating
+	const starRow = createStarRow((value) => rate(value), "★");
+	const starsRow = starRow.element;
+	starsRow.classList.add("comite-rm-stars");
 	const message = el("div", "comite-rm-message", "");
 	center.append(cover, title, sub, starsRow, message);
 
@@ -157,7 +153,7 @@ export const startRatingMode = async (source: RateSource) => {
 	volume.append(muteBtn, volumeSlider);
 	const left = el("div", "comite-rm-left");
 	left.append(playBtn, volume);
-	const hint = el("div", "comite-rm-hint", "1-5: Rate · S: Skip");
+	const hint = el("div", "comite-rm-hint", "1-5: Rate · Shift: +½ · S: Skip");
 	const skipBtn = el("button", "comite-rm-skip", "Skip ⏭");
 	controls.append(left, hint, skipBtn);
 	bottom.append(progress, controls);
@@ -182,12 +178,6 @@ export const startRatingMode = async (source: RateSource) => {
 	const hintObserver = new ResizeObserver(layoutHint);
 	hintObserver.observe(controls);
 
-	const highlight = (count: number) => starButtons.forEach((button, i) => button.classList.toggle("lit", i < count));
-	starButtons.forEach((button, i) => {
-		// Keep the chosen stars lit while the next song loads
-		button.addEventListener("mouseenter", () => !advancing && highlight(i + 1));
-		button.addEventListener("mouseleave", () => !advancing && highlight(0));
-	});
 	// #endregion
 
 	// #region State
@@ -255,7 +245,8 @@ export const startRatingMode = async (source: RateSource) => {
 		message.textContent = "";
 		starsRow.classList.remove("rated");
 		started = false;
-		highlight(0);
+		starRow.setValue(0);
+		starRow.setInteractive(true);
 		total.textContent = formatTime(song.duration);
 		playCurrent();
 	};
@@ -290,17 +281,18 @@ export const startRatingMode = async (source: RateSource) => {
 			picking = true;
 			const chosen = await pickPlaylist(unloads, {
 				title: `Playlist for ${stars(rating)}`,
-				subtitle: `Songs you rate ${rating}★ are added to this playlist. You can change it in the plugin settings.`,
-				loadPlaylists: getUserPlaylists,
+				subtitle: `Songs you rate ${rating}★ are added to this playlist. Playlists used for another rating aren't listed.`,
+				loadPlaylists: playlistsForRating(rating),
 			});
 			picking = false;
 			if (!chosen || !active) return;
-			setRatingPlaylist(rating, chosen);
-			await loadRating(rating).catch(() => undefined);
+			await assignRatingPlaylist(rating, chosen).catch(trace.err.withContext(`Failed to load the ${stars(rating)} playlist`));
 		}
 		advancing = true;
 		rated++;
-		highlight(rating);
+		// Keep the chosen stars lit while the next song loads
+		starRow.setInteractive(false);
+		starRow.setValue(rating);
 		starsRow.classList.add("rated");
 		message.textContent = `Saved as ${stars(rating)}`;
 		// Saved in order in the background, so the next song starts right away
@@ -334,17 +326,26 @@ export const startRatingMode = async (source: RateSource) => {
 	const isTyping = (target: EventTarget | null) =>
 		(target instanceof HTMLInputElement && target.type !== "range") || target instanceof HTMLTextAreaElement;
 	// Space is left to TIDAL, which already toggles play/pause
-	const ourKey = (key: string) => (key >= "1" && key <= "5") || key === "s" || key === "S" || key === "ArrowRight" || key === "Escape";
+	// By key position, so Shift+number works on every keyboard layout (Shift+3 is "*" on Swiss German)
+	const digitOf = (e: KeyboardEvent) => {
+		const match = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
+		return match ? Number(match[1]) : undefined;
+	};
+	const ourKey = (e: KeyboardEvent) => digitOf(e) !== undefined || e.code === "KeyS" || e.key === "ArrowRight" || e.key === "Escape";
 
 	const onKey = (e: KeyboardEvent) => {
 		// The playlist picker handles its own keys
-		if (picking || isTyping(e.target) || !ourKey(e.key)) return;
+		if (picking || isTyping(e.target) || !ourKey(e)) return;
 		// Window capture runs before TIDAL's own shortcuts, so they don't fire as well
 		e.preventDefault();
 		e.stopImmediatePropagation();
 		if (e.type !== "keydown" || e.repeat) return;
-		if (e.key >= "1" && e.key <= "5") rate(Number(e.key));
-		else if (e.key === "Escape") finish(true);
+		const digit = digitOf(e);
+		if (digit !== undefined) {
+			// Shift adds a half star (Shift+3 = 3.5)
+			const value = digit + (e.shiftKey ? 0.5 : 0);
+			if (value <= 5) rate(value);
+		} else if (e.key === "Escape") finish(true);
 		else skip();
 	};
 
@@ -417,7 +418,6 @@ export const startRatingMode = async (source: RateSource) => {
 	};
 	unloads.add(unload);
 
-	starButtons.forEach((button, i) => button.addEventListener("click", () => rate(i + 1)));
 	skipBtn.addEventListener("click", skip);
 	exitBtn.addEventListener("click", () => finish(true));
 	shuffleBtn.addEventListener("click", toggleShuffle);

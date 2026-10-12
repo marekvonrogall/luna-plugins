@@ -102,6 +102,15 @@ export const getFavoriteTrackItems = async (): Promise<redux.MediaItem[]> => {
 	return items;
 };
 
+/** Current title of a playlist; undefined if it no longer exists (other errors throw, so nothing gets cleared by mistake) */
+export const getPlaylistInfo = async (uuid: string): Promise<{ title: string } | undefined> => {
+	const res = await request(withQuery(`playlists/${uuid}`));
+	if (res.status === 404 || res.status === 410) return undefined;
+	if (!res.ok) throw failed("Failed to check the playlist", res);
+	const playlist = (await res.json()) as redux.Playlist;
+	return { title: playlist.title };
+};
+
 /** Track ids in a playlist (fresh) */
 export const getPlaylistTrackIds = async (uuid: string) => new Set((await fetchPlaylistItems(uuid)).map((i) => String(i.item.id)));
 

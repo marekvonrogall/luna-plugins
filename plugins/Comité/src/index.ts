@@ -1,12 +1,12 @@
 import { MediaItem, observe, StyleTag } from "@luna/lib";
 
 import { addPlaylistPickerStyles, pickPlaylist } from "../../../shared/playlistPicker";
-import { getUserPlaylists } from "./api";
 import { trace, unloads } from "./core";
 import { RATE_MODE_CSS, startRatingMode } from "./rateMode";
 import { FAVORITES_RATE_CSS, setupRateButton } from "./rateButton";
-import { applyRating, loadRating, ratingListeners, ratingOf, refreshRatings, refreshRatingsIfStale } from "./ratings";
-import { getRatingPlaylist, RATINGS, setRatingPlaylist, stars } from "./store";
+import { applyRating, assignRatingPlaylist, playlistsForRating, ratingListeners, ratingOf, refreshRatings, refreshRatingsIfStale, validateRatingPlaylists } from "./ratings";
+import { createStarRow, STAR_ROW_CSS, type StarRow } from "./starRow";
+import { getRatingPlaylist, stars } from "./store";
 
 export { errSignal, trace, unloads } from "./core";
 export { Settings } from "./Settings";
@@ -19,17 +19,13 @@ const COMPACT_BELOW = 320;
 new StyleTag(
 	"Comité",
 	unloads,
-	`
+	`${STAR_ROW_CSS}
 #${COMITÉ} { display: inline-flex; flex: none; align-items: center; }
-.comite-stars { display: inline-flex; gap: 5px; }
-.comite-star { padding: 0; margin: 0; border: none; background: none; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; opacity: 0.45; }
-.comite-star[aria-pressed="true"] { opacity: 1; }
-.comite-star:disabled { cursor: progress; }
 .comite-compact { display: none; padding: 0 4px; border: none; background: none; color: inherit; font-size: 15px; white-space: nowrap; cursor: pointer; opacity: 0.7; }
 .comite-compact[data-rated="true"] { opacity: 1; }
-#${COMITÉ}.comite-compact-mode .comite-stars { display: none; }
+#${COMITÉ}.comite-compact-mode .comite-starrow { display: none; }
 #${COMITÉ}.comite-compact-mode .comite-compact { display: inline-flex; }
-#${POPOVER} { position: fixed; z-index: 100000; display: flex; gap: 6px; padding: 8px 10px; border-radius: 8px; background: #1c1c1f; color: #fff; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); }
+#${POPOVER} { position: fixed; z-index: 100000; display: flex; padding: 8px 10px; border-radius: 8px; background: #1c1c1f; color: #fff; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); --star-gap: 6px; }
 `,
 );
 addPlaylistPickerStyles("Comité", unloads);
@@ -39,25 +35,17 @@ let currentTrackId: string | undefined;
 let currentRating = 0;
 let busy = false;
 
-const createStar = (rating: number, onClick?: () => void) => {
-	const button = document.createElement("button");
-	button.className = "comite-star";
-	button.dataset.rating = String(rating);
-	button.title = stars(rating);
-	button.addEventListener("click", () => {
-		onClick?.();
-		rate(rating);
-	});
-	return button;
-};
+/** Star rows on screen: the player bar and, while open, the compact popover */
+const rows = new Set<StarRow>();
 
-/** Updates every star button on screen (bar and popover) */
 const render = () => {
-	for (const button of document.querySelectorAll<HTMLButtonElement>(`#${COMITÉ} .comite-star, #${POPOVER} .comite-star`)) {
-		const filled = Number(button.dataset.rating) <= currentRating;
-		button.textContent = filled ? "★" : "☆";
-		button.ariaPressed = String(filled);
-		button.disabled = busy || currentTrackId === undefined;
+	for (const row of rows) {
+		if (!row.element.isConnected) {
+			rows.delete(row);
+			continue;
+		}
+		row.setValue(currentRating);
+		row.setDisabled(busy || currentTrackId === undefined);
 	}
 	const compact = document.querySelector<HTMLButtonElement>(`#${COMITÉ} .comite-compact`);
 	if (compact) {
@@ -74,7 +62,12 @@ const openPopover = (anchor: HTMLElement) => {
 	closePopover();
 	const popover = document.createElement("div");
 	popover.id = POPOVER;
-	for (const rating of RATINGS) popover.appendChild(createStar(rating, closePopover));
+	const row = createStarRow((value) => {
+		closePopover();
+		rate(value);
+	});
+	rows.add(row);
+	popover.appendChild(row.element);
 	document.body.appendChild(popover);
 	const rect = anchor.getBoundingClientRect();
 	popover.style.left = `${Math.max(8, rect.left)}px`;
@@ -93,6 +86,7 @@ const rate = async (rating: number) => {
 	const trackId = currentTrackId;
 	if (busy || trackId === undefined) return;
 	const previous = ratingOf(trackId);
+	// Clicking the current rating again removes it
 	const next = previous === rating ? 0 : rating;
 
 	busy = true;
@@ -103,12 +97,11 @@ const rate = async (rating: number) => {
 		if (next !== 0 && getRatingPlaylist(next) === undefined) {
 			const chosen = await pickPlaylist(unloads, {
 				title: `Playlist for ${stars(next)}`,
-				subtitle: `Songs you rate ${next}★ are added to this playlist. You can change it in the plugin settings.`,
-				loadPlaylists: getUserPlaylists,
+				subtitle: `Songs you rate ${next}★ are added to this playlist. Playlists used for another rating aren't listed.`,
+				loadPlaylists: playlistsForRating(next),
 			});
 			if (!chosen) return;
-			setRatingPlaylist(next, chosen);
-			await loadRating(next);
+			await assignRatingPlaylist(next, chosen);
 		}
 		await applyRating(trackId, next);
 	} catch (err) {
@@ -133,15 +126,14 @@ function loadComité(): void {
 	const wrapper = document.createElement("div");
 	wrapper.id = COMITÉ;
 
-	const starsRow = document.createElement("div");
-	starsRow.className = "comite-stars";
-	for (const rating of RATINGS) starsRow.appendChild(createStar(rating));
+	const row = createStarRow(rate);
+	rows.add(row);
 
 	const compact = document.createElement("button");
 	compact.className = "comite-compact";
 	compact.addEventListener("click", () => (document.getElementById(POPOVER) ? closePopover() : openPopover(compact)));
 
-	wrapper.append(starsRow, compact);
+	wrapper.append(row.element, compact);
 	trackContent.appendChild(wrapper);
 
 	// Collapse to the compact button when the player gets narrow
@@ -174,11 +166,13 @@ MediaItem.onMediaTransition(unloads, onTrack);
 MediaItem.fromPlaybackContext()
 	.then(onTrack)
 	.catch(trace.err.withContext("Failed to read the current song"));
-refreshRatings();
+// Pick up renamed / deleted rating playlists first, then load their songs
+validateRatingPlaylists().finally(refreshRatings);
 
 unloads.add(() => {
 	resizeObserver?.disconnect();
 	closePopover();
 	document.getElementById(COMITÉ)?.remove();
 	ratingListeners.clear();
+	rows.clear();
 });
