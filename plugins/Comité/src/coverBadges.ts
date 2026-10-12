@@ -19,11 +19,16 @@ const LINKS: Record<Kind, RegExp> = {
 export const COVER_BADGE_CSS = `
 .${BADGE} { position: absolute; top: 8px; left: 8px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; background: rgba(0, 0, 0, 0.72); color: #fff !important; font-size: 12px !important; font-weight: 700 !important; line-height: 18px !important; white-space: nowrap; font-variant-numeric: tabular-nums; text-transform: none; pointer-events: none; }
 .${BADGE} > span { color: #fff !important; font: inherit !important; letter-spacing: normal; }
-.${BADGE} > svg { display: block; flex: none; width: 1em !important; height: 1em !important; margin: 0 !important; fill: #ffd432 !important; color: #ffd432 !important; }
+.${BADGE} > svg.comite-badge-star { display: block; flex: none; width: 1em !important; height: 1em !important; margin: 0 !important; fill: #ffd432 !important; color: #ffd432 !important; }
 .${BADGE}[data-kind="artist"] { top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 13px; }
 .${BADGE}[data-variant="large"] { top: 12px; left: 12px; padding: 3px 9px; font-size: 15px !important; line-height: 22px !important; }
 /* Artist page: inline after "x fans" */
-.${BADGE}[data-variant="inline"] { position: static; transform: none; margin-left: 10px; vertical-align: middle; font-size: 13px !important; background: rgba(255, 255, 255, 0.1); }
+.${BADGE}[data-variant="inline"] { position: relative; top: auto; left: auto; transform: none; margin-left: 10px; vertical-align: middle; font-size: 13px !important; background: rgba(255, 255, 255, 0.1); }
+/* Loading: the pill's border fills clockwise with the share of the playlist read */
+.${BADGE} > svg.comite-badge-ring { position: absolute; inset: 0; width: 100% !important; height: 100% !important; overflow: visible; fill: none !important; pointer-events: none; }
+.comite-badge-ring rect { width: calc(100% - 1.5px); height: calc(100% - 1.5px); stroke-width: 1.5px; }
+.comite-badge-ring .track { stroke: rgba(255, 255, 255, 0.18); }
+.comite-badge-ring .bar { stroke: #ffd432; stroke-dasharray: 100; transition: stroke-dashoffset 0.25s linear; }
 `;
 
 type Variant = "grid" | "large" | "inline";
@@ -72,8 +77,9 @@ const findCard = (img: HTMLImageElement, kind: Kind) => {
 
 const removeBadge = (card: Card) => card.holder.querySelector(`:scope > .${BADGE}`)?.remove();
 
-const render = (card: Card, result: AverageResult | undefined) => {
-	if (result?.kind !== "average") return removeBadge(card);
+const SVG = "http://www.w3.org/2000/svg";
+
+const ensureBadge = (card: Card) => {
 	let badge = card.holder.querySelector<HTMLElement>(`:scope > .${BADGE}`);
 	if (badge === null) {
 		badge = document.createElement("div");
@@ -83,13 +89,40 @@ const render = (card: Card, result: AverageResult | undefined) => {
 		if (card.variant !== "inline" && getComputedStyle(card.holder).position === "static") card.holder.style.position = "relative";
 		card.holder.appendChild(badge);
 	}
-	// An SVG star sits exactly centred (the ★ glyph sits low) and can't be recoloured by TIDAL's button styles
-	const star = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	return badge;
+};
+
+/** An SVG star sits exactly centred (the ★ glyph sits low) and can't be recoloured by TIDAL's button styles */
+const createStar = () => {
+	const star = document.createElementNS(SVG, "svg");
+	star.classList.add("comite-badge-star");
 	star.setAttribute("viewBox", "2.4 1.75 19.2 19.2");
 	star.innerHTML = '<path d="M12 3.2l2.6 5.5 6 .7-4.4 4.1 1.2 6L12 16.6 6.6 19.5l1.2-6-4.4-4.1 6-.7z"/>';
+	return star;
+};
+
+/** Pill with "…" whose border fills clockwise (starting top left) as pages are read */
+const showLoading = (card: Card) => {
+	const badge = ensureBadge(card);
+	const value = document.createElement("span");
+	value.textContent = "...";
+	const ring = document.createElementNS(SVG, "svg");
+	ring.classList.add("comite-badge-ring");
+	// pathLength 100 makes the dash offset a percentage of the rounded outline
+	const rect = (className: string) =>
+		`<rect class="${className}" x="0.75" y="0.75" rx="5.25" ry="5.25" pathLength="100"${className === "bar" ? ' stroke-dashoffset="100"' : ""}/>`;
+	ring.innerHTML = rect("track") + rect("bar");
+	badge.replaceChildren(createStar(), value, ring);
+	badge.title = "Computing the average rating…";
+	return (fraction: number) => ring.querySelector(".bar")?.setAttribute("stroke-dashoffset", String(100 - Math.round(fraction * 100)));
+};
+
+const render = (card: Card, result: AverageResult | undefined) => {
+	if (result?.kind !== "average") return removeBadge(card);
+	const badge = ensureBadge(card);
 	const value = document.createElement("span");
 	value.textContent = result.value.toFixed(2);
-	badge.replaceChildren(star, value);
+	badge.replaceChildren(createStar(), value);
 	badge.title = `Average of ${result.rated} rated song${result.rated === 1 ? "" : "s"}${result.total !== undefined ? ` (of ${result.total})` : ""}`;
 };
 
@@ -100,15 +133,34 @@ const evaluate = async (card: Card, force = false) => {
 	if (force) forced.add(key);
 	try {
 		const always = forced.has(key);
+		// Only a shift-click on a playlist can mean many requests: show the pill right away and fill its border as pages arrive
+		let setProgress: ((fraction: number) => void) | undefined;
+		const onProgress = (fraction: number) => {
+			if (token !== card.token) return;
+			setProgress ??= showLoading(card);
+			setProgress(fraction);
+		};
 		const result =
-			card.kind === "album" ? albumAverage(card.id) : card.kind === "artist" ? artistAverage(card.id, always) : await playlistAverage(card.id, always);
+			card.kind === "album"
+				? albumAverage(card.id)
+				: card.kind === "artist"
+					? artistAverage(card.id, always)
+					: await playlistAverage(card.id, always, force ? onProgress : undefined);
+		if (setProgress !== undefined) {
+			// Let the border close before the number appears
+			setProgress(1);
+			await new Promise((resolve) => setTimeout(resolve, 300));
+		}
 		if (token !== card.token || !card.holder.isConnected) return;
 		card.computed = version;
 		render(card, result);
 		if (force && result.kind === "unrated") trace.msg.log(`None of the songs in this ${card.kind === "artist" ? "artist's catalogue" : card.kind} are rated yet`);
 	} catch (err) {
 		if (token === card.token) card.computed = version;
-		if (force) trace.msg.err.withContext("Couldn't compute the average rating")(err as Error);
+		if (force) {
+			if (token === card.token) removeBadge(card);
+			trace.msg.err.withContext("Couldn't compute the average rating")(err as Error);
+		}
 		else trace.warn.withContext(`Couldn't compute the average of ${key}`)(err as Error);
 	}
 };

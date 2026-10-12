@@ -96,22 +96,46 @@ const hopeless = (entry: PlaylistEntry) => {
 	return unrated > entry.total * (1 - PLAYLIST_MIN_COVERAGE);
 };
 
+/** Share of the playlist read so far (0-1), reported after every page request */
+export type Progress = (fraction: number) => void;
+
 /** Reads pages until the playlist is complete, turns out hopeless, or (without force) too big */
-const fill = async (uuid: string, entry: PlaylistEntry, force: boolean) => {
+const fill = async (uuid: string, entry: PlaylistEntry, force: boolean, onProgress?: Progress) => {
+	const report = () => onProgress?.(entry.total > 0 ? Math.min(1, entry.ids.length / entry.total) : 1);
 	while (!entry.complete) {
 		if (!force && entry.total >= 0 && (entry.total >= MAX_PLAYLIST_SIZE || hopeless(entry))) return;
+		if (force && entry.total >= 0) return fillRest(uuid, entry, report);
+		onProgress?.(0);
 		const page = await limited(() => fetchPlaylistPage(uuid, entry.ids.length));
 		entry.total = page.total;
 		entry.ids.push(...page.items.map(({ item }) => String(item.id)));
 		if (page.items.length === 0 || entry.ids.length >= entry.total) entry.complete = true;
+		report();
 	}
+};
+
+/** Shift-click on a big playlist: all remaining pages, two at a time */
+const fillRest = async (uuid: string, entry: PlaylistEntry, report: () => void) => {
+	const step = 100;
+	const offsets: number[] = [];
+	for (let offset = entry.ids.length; offset < entry.total; offset += step) offsets.push(offset);
+	report();
+	await Promise.all(
+		offsets.map((offset) =>
+			limited(() => fetchPlaylistPage(uuid, offset)).then((page) => {
+				entry.ids.push(...page.items.map(({ item }) => String(item.id)));
+				report();
+			}),
+		),
+	);
+	entry.complete = true;
 };
 
 /**
  * Playlists under 500 songs with 75% rated. Reading stops early once 75% is out of reach,
  * and continues from there later if more songs got rated. `force` (shift-click) reads everything and skips both rules.
  */
-export const playlistAverage = async (uuid: string, force = false): Promise<AverageResult> => {
+export const playlistAverage = async (uuid: string, force = false, onProgress?: Progress): Promise<AverageResult> => {
 	const info = redux.store.getState().content.playlists[uuid];
 	const stamp = info?.lastUpdated ?? "";
 	let entry = playlists.get(uuid);
@@ -122,7 +146,7 @@ export const playlistAverage = async (uuid: string, force = false): Promise<Aver
 		playlists.set(uuid, entry);
 	}
 	const current = entry;
-	const queued = (queues.get(uuid) ?? Promise.resolve()).then(() => fill(uuid, current, force));
+	const queued = (queues.get(uuid) ?? Promise.resolve()).then(() => fill(uuid, current, force, onProgress));
 	queues.set(
 		uuid,
 		queued.catch(() => {}),
