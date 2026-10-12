@@ -2,13 +2,13 @@ import { ContentBase, MediaItem, PlayState, redux } from "@luna/lib";
 
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { pickPlaylist } from "../../../shared/playlistPicker";
-import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems } from "./api";
+import { getAlbumItems, getArtistAlbumIds, getFavoriteTrackItems, getMixItems } from "./api";
 import { trace, unloads } from "./core";
 import { applyRating, assignRatingPlaylist, playlistsForRating, ratingOf, refreshRatings } from "./ratings";
 import { createStarRow } from "./starRow";
 import { getRatingPlaylist, settings, stars } from "./store";
 
-export type RateSource = { type: "album" | "playlist" | "favorites" | "artist"; id: string; title?: string };
+export type RateSource = { type: "album" | "playlist" | "favorites" | "artist" | "mix"; id: string; title?: string };
 
 type Song = { id: string; title: string; artist: string; album: string; cover?: string; duration: number };
 
@@ -466,6 +466,7 @@ export const startRatingMode = async (source: RateSource) => {
 			if (source.type === "album") return getAlbumItems(source.id);
 			if (source.type === "artist") return loadArtist();
 			if (source.type === "favorites") return getFavoriteTrackItems();
+			if (source.type === "mix") return getMixItems(source.id);
 			return fetchPlaylistItems(source.id);
 		};
 		const [items] = await Promise.all([loadItems(), refreshRatings()]);

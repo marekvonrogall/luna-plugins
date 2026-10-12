@@ -69,6 +69,31 @@ export const getAlbumItems = async (albumId: string): Promise<redux.MediaItem[]>
 	return items;
 };
 
+/** Songs of a mix or radio; falls back to the mix page if the items endpoint isn't available */
+export const getMixItems = async (mixId: string): Promise<redux.MediaItem[]> => {
+	const items: redux.MediaItem[] = [];
+	for (let offset = 0; ; ) {
+		const res = await request(withQuery(`mixes/${mixId}/items`, `&limit=100&offset=${offset}`));
+		if (!res.ok) break;
+		const page = (await res.json()) as { items?: redux.MediaItem[]; totalNumberOfItems?: number };
+		const pageItems = page.items ?? [];
+		items.push(...pageItems);
+		offset += pageItems.length;
+		if (pageItems.length === 0 || offset >= (page.totalNumberOfItems ?? 0)) return items;
+	}
+	if (items.length > 0) return items;
+
+	const res = await request(withQuery(`pages/mix`, `&mixId=${encodeURIComponent(mixId)}`));
+	if (!res.ok) throw failed("Failed to load the mix", res);
+	type Module = { type?: string; pagedList?: { items?: redux.Track[] } };
+	const page = (await res.json()) as { rows?: { modules?: Module[] }[] };
+	const modules = (page.rows ?? []).flatMap((row) => row.modules ?? []);
+	return modules
+		.filter((module) => module.type === "TRACK_LIST")
+		.flatMap((module) => module.pagedList?.items ?? [])
+		.map((item) => ({ type: "track" as const, item }));
+};
+
 const fetchPaged = async <T>(path: string, limit: number, what: string): Promise<T[]> => {
 	const items: T[] = [];
 	for (let offset = 0; ; ) {

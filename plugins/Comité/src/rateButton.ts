@@ -13,7 +13,7 @@ const STAR_SVG =
 
 const currentPath = () => redux.store.getState().router?.currentPath ?? window.location.pathname;
 
-/** Album or playlist shown on the current page */
+/** Album, playlist, artist or mix shown on the current page */
 const currentSource = (): RateSource | undefined => {
 	const state = redux.store.getState();
 	const path = currentPath();
@@ -23,6 +23,9 @@ const currentSource = (): RateSource | undefined => {
 	if (playlist) return { type: "playlist", id: playlist[1], title: state.content.playlists[playlist[1]]?.title };
 	const artist = /^\/artist\/(\d+)/.exec(path);
 	if (artist) return { type: "artist", id: artist[1], title: state.content.artists[artist[1]]?.name };
+	// Mixes and radios (artist / track radio) share the /mix route; TIDAL keeps no mix titles in the store, so read the page title
+	const mix = /^\/mix\/([0-9a-z]+)/i.exec(path);
+	if (mix) return { type: "mix", id: mix[1], title: findHeading()?.textContent?.trim() || undefined };
 	return undefined;
 };
 
@@ -98,12 +101,21 @@ const setupFavoritesButton = (unloads: LunaUnloads, onRate: (source: RateSource)
 	unloads.add(() => document.getElementById(FAVORITES_ID)?.remove());
 };
 
+const PLAY_ALL = '[data-test="play-all"], [data-test="shuffle-all"]';
+
+/** The page header's "More" and the one in the bar that replaces it when scrolling (both sit next to Play / Shuffle), not e.g. album cards */
+const isHeaderMore = (more: HTMLElement) => {
+	if (more === document.querySelector(MORE_SELECTOR)) return true;
+	let node = more.parentElement;
+	for (let depth = 0; node !== null && depth < 4; depth++, node = node.parentElement) if (node.querySelector(PLAY_ALL)) return true;
+	return false;
+};
+
 /** Adds "Rate" left of the "More" button on album, playlist and artist pages, and next to the title on the favorites page */
 export const setupRateButton = (unloads: LunaUnloads, onRate: (source: RateSource) => void) => {
 	const ensure = (more: HTMLElement) => {
 		if (currentSource() === undefined) return;
-		// Only the page header's "More" (the first one), not e.g. album cards further down
-		if (more !== document.querySelector(MORE_SELECTOR)) return;
+		if (!isHeaderMore(more)) return;
 		const container = more.parentElement;
 		if (!container || container.querySelector(`[${BUTTON_ATTR}]`)) return;
 		container.insertBefore(createButton(more, onRate), more);
