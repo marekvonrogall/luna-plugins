@@ -8,6 +8,8 @@ import { FlacStreamTagger, PictureType } from "flac-stream-tagger";
 import type { PlaybackInfo } from "@luna/lib";
 import { fetchMediaItemStream } from "@luna/lib.native";
 
+import { finalizeDashDownload } from "./finalizeDash";
+
 type Progress = { total?: number; downloaded?: number };
 type Tags = { tags: Record<string, string[] | string>; coverUrl?: string };
 
@@ -55,7 +57,23 @@ export const downloadTrack = async (trackId: string, playbackInfo: PlaybackInfo,
 		} else {
 			await pipeline(source, createWriteStream(partPath));
 		}
-		await rename(partPath, filePath);
+
+		if (playbackInfo.manifestMimeType === "application/dash+xml") {
+			// .m4a arrives as raw fragmented MP4 without tags: remux and tag it (needs a .m4a name for the tagger)
+			const taggingPath = `${filePath}.tagging${path.extname(filePath) || ".m4a"}`;
+			try {
+				await finalizeDashDownload(partPath, taggingPath, tags);
+			} catch (err) {
+				await rm(taggingPath, { force: true });
+				// Keep the audio, but say it has no tags
+				await rename(partPath, filePath);
+				throw new Error(`Saved without tags, tagging failed: ${err instanceof Error ? err.message : String(err)}`);
+			}
+			await rename(taggingPath, filePath);
+			await rm(partPath, { force: true });
+		} else {
+			await rename(partPath, filePath);
+		}
 	} catch (err) {
 		await rm(partPath, { force: true });
 		throw err;

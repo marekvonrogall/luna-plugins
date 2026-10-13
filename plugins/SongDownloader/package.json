@@ -10,6 +10,8 @@
 	"main": "./src/index.ts",
 	"dependencies": {
 		"sanitize-filename": "^1.6.3",
-		"flac-stream-tagger": "^1.0.10"
+		"flac-stream-tagger": "^1.0.10",
+		"mediabunny": "^1.53.1",
+		"node-taglib-sharp": "^6.0.3"
 	}
 }
