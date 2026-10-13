@@ -44,7 +44,12 @@ type Card = { kind: Kind; id: string; holder: HTMLElement; variant: Variant; pag
 /** Covers on screen, keyed by the card element that links to exactly one playlist / album / artist */
 const cards = new Map<HTMLElement, Card>();
 /** Images already looked at (by their src), so the frequent rescans only handle new or recycled covers */
-let seen = new WeakMap<HTMLImageElement, string>();
+let seen = new WeakMap<HTMLElement, string>();
+
+/** Covers are images, or videos for animated album covers */
+const COVER = "img, video";
+const coverSource = (cover: HTMLElement) =>
+	cover instanceof HTMLVideoElement ? cover.poster || cover.currentSrc : cover instanceof HTMLImageElement ? cover.currentSrc || cover.src : "";
 /** Covers the user shift-clicked show their average for the rest of the session, whatever the size or share rated */
 const forced = new Set<string>();
 
@@ -69,7 +74,7 @@ const currentPage = (): Page | undefined => {
 };
 
 /** Walks up from a cover image to the smallest element linking to exactly one item of the tab's kind */
-const findCard = (img: HTMLImageElement, kind: Kind) => {
+const findCard = (img: HTMLElement, kind: Kind) => {
 	let node: HTMLElement | null = img;
 	for (let depth = 0; node !== null && depth < 8; depth++, node = node.parentElement) {
 		const ids = new Set<string>();
@@ -237,7 +242,7 @@ const addCard = (element: HTMLElement, img: HTMLElement, kind: Kind, id: string,
 const scanAlbumCards = (root: HTMLElement) => {
 	for (const card of root.querySelectorAll<HTMLElement>('[data-test^="album-card-"], [data-test^="artist-card-"]')) {
 		const match = /^(album|artist)-card-(\d+)$/.exec(card.dataset.test ?? "");
-		const img = card.querySelector<HTMLImageElement>("img");
+		const img = card.querySelector<HTMLElement>(COVER);
 		if (match === null || img === null) continue;
 		const [, kind, id] = match as unknown as [string, Kind, string];
 		const existing = cards.get(card);
@@ -255,7 +260,7 @@ const scanCells = (root: HTMLElement) => {
 		const artist = album ? null : LINKS.artist.exec(href);
 		const kind: Kind | undefined = album ? "album" : artist ? "artist" : undefined;
 		const id = album?.[1] ?? artist?.[1];
-		const img = link.querySelector<HTMLImageElement>("img");
+		const img = link.querySelector<HTMLElement>(COVER);
 		if (kind === undefined || id === undefined || img === null) continue;
 		const existing = cards.get(link);
 		if (existing?.id === id && existing.holder.isConnected) continue;
@@ -280,7 +285,12 @@ const scanDetail = (root: HTMLElement, kind: Kind, id: string) => {
 	}
 	// Album pages: "More by" / related albums and artists further down
 	if (kind === "album") scanFreeCards(root);
-	const img = root.querySelector<HTMLImageElement>('img[data-test="cover-art"]');
+	// Albums: the image (or, for animated covers, the video) in the header's cover art container; playlists: img[data-test="cover-art"].
+	// Never the small copy in the header that appears when scrolling (it comes first when the big cover is a video)
+	const img =
+		root.querySelector<HTMLElement>('[class*="_coverArtContainer_"] :is(img, video)') ??
+		[...root.querySelectorAll<HTMLElement>('img[data-test="cover-art"]')].find((cover) => !cover.closest('[class*="_smallHeader_"]')) ??
+		null;
 	if (img === null) return;
 	// On your own playlists the cover is a "Change image" button: shift-clicking anywhere on it counts
 	const element = img.closest<HTMLElement>("button, a") ?? img;
@@ -301,8 +311,8 @@ const scan = () => {
 	if (root === null) return;
 	if (page.cardsOnly) return scanFreeCards(root);
 	if (page.detailId !== undefined) return scanDetail(root, kind, page.detailId);
-	for (const img of root.querySelectorAll<HTMLImageElement>("img")) {
-		const src = img.currentSrc || img.src;
+	for (const img of root.querySelectorAll<HTMLElement>(COVER)) {
+		const src = coverSource(img);
 		if (seen.get(img) === src) continue;
 		seen.set(img, src);
 		const found = findCard(img, kind);
