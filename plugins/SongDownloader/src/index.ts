@@ -1,12 +1,13 @@
 import { Tracer, type LunaUnload } from "@luna/core";
-import { ContextMenu, MediaItems, Playlist, safeInterval, StyleTag, type MediaCollection } from "@luna/lib";
+import { ContextMenu, MediaItem, safeInterval, StyleTag } from "@luna/lib";
 
-import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { addProgressToastStyles, ProgressToast } from "../../../shared/progressToast";
+import { getCollectionItems, type CollectionItem } from "./collectionItems";
 import { downloadTrack, getDownloadProgress } from "./download.native";
 import { getFreshPlaybackInfo } from "./playbackInfo";
 import { getDownloadFolder, getDownloadPath, getFastLookupInfo, getResolvedFileInfo } from "./helpers";
 import { settings } from "./Settings";
+import { findRealMax, getTags } from "./tags";
 import { addSongToCache, hasSongInCache, hasSongStemInCache, refreshSongCache, renameSongInCache } from "./songCache";
 
 import styles from "file://downloadButton.css?minify";
@@ -33,19 +34,14 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 		const toast = new ProgressToast(unloads);
 		toast.update("Downloading tracks", "Starting…");
 		try {
-			// Luna caches playlist contents per session, so newly added songs would be missing: read it fresh
-			let collection: MediaCollection = mediaCollection;
-			if (mediaCollection instanceof Playlist) {
-				toast.update("Downloading tracks", "Loading playlist…");
-				const items = await fetchPlaylistItems(String(mediaCollection.uuid)).catch(trace.msg.err.withContext("Failed to load playlist"));
-				if (!items) return;
-				collection = MediaItems.fromTMediaItems(items);
-			}
-			const trackCount = await collection.count();
+			// Loaded in pages (100 tracks per request) instead of Luna's one request per track
+			toast.update("Downloading tracks", "Loading tracks…");
+			const items = await getCollectionItems(mediaCollection).catch(trace.msg.err.withContext("Failed to load tracks"));
+			if (!items) return;
+			const trackCount = items.length;
 
 			type PreparedTrack = {
-				mediaItem: Awaited<ReturnType<(typeof mediaCollection)["mediaItems"]>> extends AsyncIterable<infer T> ? T : never;
-				relativePathStem: string;
+				item: CollectionItem;
 				simpleFileName: string;
 				title: string;
 			};
@@ -61,19 +57,23 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 				await refreshSongCache(downloadFolder);
 			}
 			downloadButton.elem!.style.setProperty("--progress", `${0}%`);
-			downloadButton.text = `Fetching selected tracks... (0/${trackCount})`;
-			for await (let mediaItem of await collection.mediaItems()) {
+			downloadButton.text = `Checking tracks... (0/${trackCount})`;
+			// Only the API data is needed here, so this makes no requests
+			for (const item of items) {
 				if (toast.cancelled) break;
-				const { relativePathStem, simpleFileName, title } = getFastLookupInfo(mediaItem, downloadFolder);
-				if (downloadFolder !== undefined && hasSongStemInCache(downloadFolder, relativePathStem)) {
-					skippedExisting++;
+				if (item.tidalItem === undefined) {
+					// Couldn't be loaded in advance: checked with its tags in the download loop
+					preparedTracks.push({ item, simpleFileName: `Track ${item.id}`, title: `Track ${item.id}` });
+					continue;
 				}
-				else preparedTracks.push({ mediaItem, relativePathStem, simpleFileName, title });
-				downloadButton.text = `Fetching selected tracks... (${preparedTracks.length+skippedExisting}/${trackCount})`;
-				downloadButton.elem!.style.setProperty("--progress", `${((preparedTracks.length + skippedExisting) / trackCount) * 100}%`);
-				const checked = preparedTracks.length + skippedExisting;
-				toast.update("Preparing downloads", `Checking tracks (${checked}/${trackCount})`, checked / trackCount);
+				const { relativePathStem, simpleFileName, title } = getFastLookupInfo(item.tidalItem, downloadFolder);
+				if (downloadFolder !== undefined && hasSongStemInCache(downloadFolder, relativePathStem)) skippedExisting++;
+				else preparedTracks.push({ item, simpleFileName, title });
 			}
+			const checked = preparedTracks.length + skippedExisting;
+			downloadButton.text = `Checking tracks... (${checked}/${trackCount})`;
+			downloadButton.elem!.style.setProperty("--progress", `${(checked / Math.max(trackCount, 1)) * 100}%`);
+			toast.update("Preparing downloads", `Checking tracks (${checked}/${trackCount})`, checked / Math.max(trackCount, 1));
 
 			let currentIndex = 1;
 			let downloaded = 0;
@@ -81,15 +81,18 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 			const totalToDownload = preparedTracks.length;
 			for (const preparedTrack of preparedTracks) {
 				if (toast.cancelled) break;
-				let mediaItem = preparedTrack.mediaItem;
+				let mediaItem: MediaItem;
 				let fileInfo: Awaited<ReturnType<typeof getResolvedFileInfo>>;
 				try {
-					if (settings.useRealMAX) mediaItem = (await mediaItem.max()) ?? mediaItem;
+					// Only tracks that actually get downloaded become Luna MediaItems
+					const found = await MediaItem.fromId(preparedTrack.item.id, preparedTrack.item.type);
+					if (found === undefined) throw new Error("Track is not available");
+					mediaItem = settings.useRealMAX ? await findRealMax(found) : found;
 					fileInfo = await getResolvedFileInfo(mediaItem, settings.downloadQuality, downloadFolder);
 				} catch (err) {
 					unavailable++;
 					currentIndex++;
-					trace.warn(`Skipped ${preparedTrack.simpleFileName} (track ${mediaItem.id}): ${err instanceof Error ? err.message : String(err)}`);
+					trace.warn(`Skipped ${preparedTrack.simpleFileName} (track ${preparedTrack.item.id}): ${err instanceof Error ? err.message : String(err)}`);
 					continue;
 				}
 				const { fileName, legacyFileName, simpleFileName, tags } = fileInfo;
@@ -146,7 +149,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 				const downloadCompleted = await (async () => {
 					const playbackInfo = await getFreshPlaybackInfo(mediaItem.id, settings.downloadQuality);
 					if (playbackInfo === undefined) throw new Error(`Track ${mediaItem.id} is not available`);
-					await downloadTrack(String(mediaItem.id), playbackInfo, path, await mediaItem.flacTags());
+					await downloadTrack(String(mediaItem.id), playbackInfo, path, await getTags(mediaItem));
 					return true;
 				})().catch(trace.msg.err.withContext(`Failed to download ${tags.title ?? preparedTrack.title}`));
 				clearInterval();

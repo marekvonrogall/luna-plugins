@@ -1,6 +1,7 @@
 import { MediaItem, type redux } from "@luna/lib";
 import { showOpenDialog, showSaveDialog } from "@luna/lib.native";
 import { settings } from "./Settings";
+import { formatTitle, getTags } from "./tags";
 
 import sanitize from "sanitize-filename";
 
@@ -102,7 +103,7 @@ const normalizeTagValue = (value: unknown) => {
 /** `baseDir` is the download folder, used to keep the full path within Windows' limit */
 export const getResolvedFileInfo = async (mediaItem: MediaItem, audioQuality?: redux.AudioQuality, baseDir?: string) => {
 	const extension = await mediaItem.fileExtension(audioQuality);
-	const { tags } = await mediaItem.flacTags();
+	const { tags } = await getTags(mediaItem);
 
 	const values: Record<string, string | undefined> = {};
 	for (const tag of MediaItem.availableTags) {
@@ -128,11 +129,11 @@ export const getResolvedFileInfo = async (mediaItem: MediaItem, audioQuality?: r
 	};
 };
 
-export const getFastLookupInfo = (mediaItem: MediaItem, baseDir?: string) => {
-	const tidalItem = mediaItem.tidalItem;
+/** Expected path from the API's track data alone, without loading tags (no requests) */
+export const getFastLookupInfo = (tidalItem: Readonly<redux.Track>, baseDir?: string) => {
 	const firstArtist = tidalItem.artists?.[0]?.name ?? tidalItem.artist?.name ?? "UnknownArtist";
 	const albumTitle = tidalItem.album?.title ?? "UnknownAlbum";
-	const title = tidalItem.version ? `${tidalItem.title} (${tidalItem.version})` : tidalItem.title;
+	const title = formatTitle(tidalItem.title ?? "", tidalItem.version);
 	const releaseDate = tidalItem.releaseDate ?? tidalItem.streamStartDate;
 	const year = releaseDate?.slice(0, 4);
 
