@@ -501,11 +501,16 @@ export const startRatingMode = async (source: RateSource) => {
 		setTimeout(seekWhenReady, 150);
 	};
 
-	/** Back to the song being rated, where it was */
-	const backToSong = () => {
+	/** Where the right song was when you left it, so switching back and forth keeps both positions */
+	let opponentPosition: { id: string; position: number } | undefined;
+
+	/** Back to the song being rated, where it was (`ended`: the right song played to its end, start it over next time) */
+	const backToSong = (ended = false) => {
 		const song = current();
 		if (song === undefined || listening === undefined) return;
 		const { position } = listening;
+		const playingRight = String(PlayState.playbackContext?.actualProductId) === listening.id;
+		opponentPosition = !ended && playingRight && PlayState.currentTime > 0 ? { id: listening.id, position: PlayState.currentTime } : undefined;
 		listening = undefined;
 		renderListen();
 		started = false;
@@ -521,7 +526,7 @@ export const startRatingMode = async (source: RateSource) => {
 		playOpponent();
 	};
 
-	/** Plays the right song from its start point; the left song's position is kept for going back */
+	/** Plays the right song where you left it (a new one from its start point); the left song's position is kept for going back */
 	const playOpponent = () => {
 		const song = current();
 		const opponentId = duelState?.opponentId;
@@ -533,7 +538,8 @@ export const startRatingMode = async (source: RateSource) => {
 		// The song being rated stops on purpose: not "ended"
 		started = false;
 		renderListen();
-		playAt(opponentId, "start", () => (target.started = true));
+		const resumeAt = opponentPosition?.id === opponentId ? opponentPosition.position : 0;
+		playAt(opponentId, resumeAt > 0 ? resumeAt : "start", () => (target.started = true));
 	};
 
 	const toggleGame = () => {
@@ -617,6 +623,7 @@ export const startRatingMode = async (source: RateSource) => {
 		starRow.setValue(0);
 		starRow.setInteractive(true);
 		listening = undefined;
+		opponentPosition = undefined;
 		// Ratings change while you rate: the duel button may have just become available
 		updateGameButton();
 		startDuel();
@@ -792,7 +799,7 @@ export const startRatingMode = async (source: RateSource) => {
 			const playingRef = String(PlayState.playbackContext?.actualProductId) === listening.id;
 			const duration = playingRef ? (PlayState.playbackContext?.actualDuration ?? 0) : 0;
 			const finished = !PlayState.playing && duration > 0 && PlayState.currentTime >= duration - 1;
-			if (listening.started && (!playingRef || finished)) return backToSong();
+			if (listening.started && (!playingRef || finished)) return backToSong(finished);
 			const position = playingRef ? PlayState.currentTime : 0;
 			time.textContent = formatTime(position);
 			total.textContent = formatTime(duration);
