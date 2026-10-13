@@ -1,0 +1,12 @@
+{
+	"name": "Collector",
+	"description": "Right-click songs, an album or a playlist and add the full albums of every song to one of your playlists (duplicates skipped).",
+	"homepage": "https://github.com/marekvonrogall/luna-plugins#collector",
+	"author": {
+		"name": "marekvonrogall",
+		"url": "https://github.com/marekvonrogall",
+		"avatarUrl": "https://avatars.githubusercontent.com/u/110893394"
+	},
+	"main": "./src/index.ts",
+	"type": "module"
+}

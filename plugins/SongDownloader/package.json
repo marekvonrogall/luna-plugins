@@ -1,7 +1,7 @@
 {
-	"name": "ImprovedSongDownloader",
+	"name": "Librarian",
 	"description": "Download tidal songs as FLAC files.",
-	"homepage": "https://github.com/marekvonrogall/luna-plugins#SongDownloader",
+	"homepage": "https://github.com/marekvonrogall/luna-plugins#librarian",
 	"author": {
 		"name": "marekvonrogall",
 		"url": "https://github.com/marekvonrogall",
@@ -9,6 +9,9 @@
 	},
 	"main": "./src/index.ts",
 	"dependencies": {
-		"sanitize-filename": "^1.6.3"
+		"sanitize-filename": "^1.6.3",
+		"flac-stream-tagger": "^1.0.10",
+		"mediabunny": "^1.53.1",
+		"node-taglib-sharp": "^6.0.3"
 	}
 }

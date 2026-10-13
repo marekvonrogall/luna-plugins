@@ -1,7 +1,8 @@
-import { readdir } from "fs/promises";
+import { access, mkdir, readdir, rename } from "fs/promises";
 import path from "path";
 
-const normalizePath = (value: string) => value.replaceAll("\\", "/").toLowerCase();
+// Keep the original case, the renderer side lower-cases for lookups itself
+const normalizePath = (value: string) => value.replaceAll("\\", "/");
 
 export const scanSongPaths = async (directory: string) => {
 	const resolvedDirectory = path.resolve(directory);
@@ -29,4 +30,18 @@ export const scanSongPaths = async (directory: string) => {
 	}
 
 	return { resolvedDirectory, files };
+};
+
+/** Renames a song inside the library; returns false if the target already exists */
+export const renameSongFile = async (directory: string, from: string, to: string) => {
+	const target = path.join(directory, to);
+	try {
+		await access(target);
+		return false;
+	} catch {
+		// Target is free
+	}
+	await mkdir(path.dirname(target), { recursive: true });
+	await rename(path.join(directory, from), target);
+	return true;
 };

@@ -1,6 +1,6 @@
 import { ReactiveStore } from "@luna/core";
 import { MediaItem, Quality, type redux } from "@luna/lib";
-import { LunaButtonSetting, LunaSelectItem, LunaSelectSetting, LunaSettings, LunaSwitchSetting, LunaTextSetting } from "@luna/ui";
+import { LunaButtonSetting, LunaNumber, LunaSelectItem, LunaSelectSetting, LunaSettings, LunaSwitchSetting, LunaTextSetting, LunaTitle } from "@luna/ui";
 
 import React from "react";
 import { getDownloadFolder } from "./helpers";
@@ -12,11 +12,16 @@ type Settings = {
 	defaultPath?: string;
 	pathFormat: string;
 	useRealMAX: boolean;
+	parallelDownloads: number;
 };
+
+export const MAX_PARALLEL = 8;
+export const DEFAULT_PARALLEL = 4;
 export const settings = await ReactiveStore.getPluginStorage<Settings>("SongDownloader", {
 	downloadQuality: Quality.Max.audioQuality,
 	pathFormat: defaultFilenameFormat,
 	useRealMAX: true,
+	parallelDownloads: DEFAULT_PARALLEL,
 });
 
 // Sanitize download quality
@@ -27,6 +32,7 @@ export const Settings = () => {
 	const [defaultPath, setDefaultPath] = React.useState(settings.defaultPath);
 	const [pathFormat, setPathFormat] = React.useState(settings.pathFormat);
 	const [useRealMAX, setUseRealMAX] = React.useState(settings.useRealMAX);
+	const [parallelDownloads, setParallelDownloads] = React.useState(settings.parallelDownloads ?? DEFAULT_PARALLEL);
 
 	return (
 		<LunaSettings>
@@ -45,6 +51,24 @@ export const Settings = () => {
 				value={useRealMAX}
 				onChange={(_, checked) => setUseRealMAX((settings.useRealMAX = checked))}
 			/>
+			{/* Own row: in LunaNumberSetting the field doesn't move to the right edge */}
+			<div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+				<LunaTitle
+					variant="h8"
+					title="Downloads at once"
+					desc={`How many songs download at the same time (1–${MAX_PARALLEL}). Only with a default save path, otherwise one at a time.`}
+				/>
+				<div style={{ marginLeft: "auto", marginRight: 16, flexShrink: 0 }}>
+					<LunaNumber
+						size="small"
+						label={null}
+						min={1}
+						max={MAX_PARALLEL}
+						value={parallelDownloads}
+						onNumber={(value: number) => setParallelDownloads((settings.parallelDownloads = value))}
+					/>
+				</div>
+			</div>
 			<LunaButtonSetting
 				title="Default save path"
 				desc={

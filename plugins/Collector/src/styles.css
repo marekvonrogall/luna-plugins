@@ -1,0 +1,225 @@
+.collector-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.6);
+}
+.collector-modal {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	width: min(460px, calc(100vw - 32px));
+	max-height: min(640px, calc(100vh - 64px));
+	padding: 20px;
+	border-radius: 12px;
+	background: #1c1c1f;
+	color: #fff;
+	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+	font-family: inherit;
+}
+.collector-title {
+	font-size: 18px;
+	font-weight: 700;
+}
+.collector-subtitle {
+	margin-top: -6px;
+	font-size: 13px;
+	color: #a0a0a8;
+}
+.collector-search {
+	padding: 10px 12px;
+	border: 1px solid #3a3a40;
+	border-radius: 8px;
+	background: #111113;
+	color: #fff;
+	font-size: 14px;
+	outline: none;
+}
+.collector-search:focus {
+	border-color: #32f4ff;
+}
+.collector-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 120px;
+	overflow-y: auto;
+}
+.collector-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	padding: 6px 8px;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.collector-row:hover,
+.collector-row:focus-visible {
+	background: #2b2b30;
+	outline: none;
+}
+.collector-cover {
+	flex: none;
+	width: 40px;
+	height: 40px;
+	border-radius: 4px;
+	background: #333 center / cover no-repeat;
+}
+.collector-row-text {
+	min-width: 0;
+}
+.collector-row-title {
+	overflow: hidden;
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.collector-row-meta {
+	font-size: 12px;
+	color: #a0a0a8;
+}
+.collector-empty {
+	padding: 24px 8px;
+	font-size: 14px;
+	text-align: center;
+	color: #a0a0a8;
+}
+.collector-error {
+	color: #ff6b6b;
+}
+.collector-footer {
+	display: flex;
+	justify-content: flex-end;
+}
+.collector-btn {
+	padding: 8px 16px;
+	border: none;
+	border-radius: 8px;
+	background: #2b2b30;
+	color: #fff;
+	font-size: 14px;
+	cursor: pointer;
+}
+.collector-btn:hover:not(:disabled) {
+	background: #3a3a40;
+}
+.collector-btn:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+.collector-more {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	margin-left: 12px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: inherit;
+	vertical-align: middle;
+	cursor: pointer;
+	opacity: 0.8;
+}
+.collector-more:hover {
+	background: rgba(255, 255, 255, 0.1);
+	opacity: 1;
+}
+.collector-more-floating {
+	position: fixed;
+	top: 72px;
+	right: 32px;
+	z-index: 1000;
+	margin: 0;
+	background: #1c1c1f;
+	color: #fff;
+}
+.collector-menu {
+	position: fixed;
+	z-index: 100000;
+	min-width: 160px;
+	padding: 6px;
+	border-radius: 8px;
+	background: #1c1c1f;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.collector-menu-item {
+	display: block;
+	width: 100%;
+	padding: 8px 12px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: #fff;
+	font-size: 14px;
+	text-align: left;
+	cursor: pointer;
+}
+.collector-menu-item:hover {
+	background: #2b2b30;
+}
+.collector-checklist {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+	overflow: hidden;
+}
+.collector-tools {
+	display: flex;
+	gap: 16px;
+}
+.collector-link {
+	padding: 0;
+	border: none;
+	background: none;
+	color: #32f4ff;
+	font-size: 13px;
+	cursor: pointer;
+}
+.collector-link:hover {
+	text-decoration: underline;
+}
+.collector-checklist .collector-row {
+	cursor: pointer;
+}
+.collector-checkbox {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	margin-left: auto;
+	accent-color: #32f4ff;
+	cursor: pointer;
+}
+.collector-cover-round {
+	border-radius: 50%;
+}
+.collector-counter {
+	font-size: 12px;
+	color: #a0a0a8;
+}
+.collector-footer {
+	gap: 8px;
+}
+.collector-btn-primary {
+	background: #32f4ff;
+	color: #000;
+	font-weight: 600;
+}
+.collector-btn-primary:hover:not(:disabled) {
+	background: #6ff7ff;
+}
+.collector-checklist .collector-list {
+	flex: 1 1 auto;
+}
