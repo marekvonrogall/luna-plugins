@@ -123,7 +123,9 @@ is based on the original SongDownloader plugin and adds library awareness and a 
 
 Right-click a song, a selection of songs, an album or a playlist and choose **Download tracks**.
 
-![librarian_context-menu.png](resources/Librarian/librarian_context-menu.png)
+<p align="center">
+  <img src="resources/Librarian/librarian_context-menu.png">
+</p>
 
 ### Features
 
@@ -139,7 +141,9 @@ Right-click a song, a selection of songs, an album or a playlist and choose **Do
   unavailable.
 - **Concurrent downloads:** Multiple downloads can run in parallel, making it extremely fast.
 
-![librarian_concurrent-downloads.png](resources/Librarian/librarian_concurrent-downloads.png)
+<p align="center">
+  <img src="resources/Librarian/librarian_concurrent-downloads.png">
+</p>
 
 ### Reliability
 
@@ -215,8 +219,9 @@ Add the store to TidaLuna to install any of the plugins and receive updates auto
 https://github.com/marekvonrogall/luna-plugins/releases/download/latest/store.json
 ```
 
-<img width="818" height="199" alt="Adding the store in Luna Settings" src="https://github.com/user-attachments/assets/ab72ec3b-2515-4cf9-a24d-17ee235b8f40" />
-
+<p align="center">
+  <img width="818" height="199" alt="Adding the store in Luna Settings" src="https://github.com/user-attachments/assets/ab72ec3b-2515-4cf9-a24d-17ee235b8f40" />
+</p>
 ## Development
 
 Requires [Node.js](https://nodejs.org) and [pnpm](https://pnpm.io).
