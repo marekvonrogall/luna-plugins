@@ -2,7 +2,7 @@ import type { LunaUnloads } from "@luna/core";
 import { StyleTag } from "@luna/lib";
 
 /**
- * Progress box with label, detail line, bar and cancel button.
+ * Progress box with label, detail line (or several lines, e.g. one per running download), bar and cancel button.
  * Shared by several plugins: all boxes live in one stack container, so they never overlap
  * and move up when one disappears.
  */
@@ -38,6 +38,27 @@ const CSS = `
 	white-space: nowrap;
 	text-overflow: ellipsis;
 	color: #a0a0a8;
+}
+.luna-progress-lines {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	white-space: normal;
+}
+.luna-progress-line {
+	display: flex;
+	gap: 8px;
+}
+.luna-progress-line-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.luna-progress-line-value {
+	flex: none;
+	font-variant-numeric: tabular-nums;
 }
 .luna-progress-bar {
 	height: 4px;
@@ -101,6 +122,9 @@ const el = (tag: string, className: string, text?: string) => {
 	return node;
 };
 
+/** One line of the detail area: text (cut with … if too long) and an optional value aligned to the right */
+export type ProgressLine = { text: string; value?: string };
+
 export class ProgressToast {
 	private readonly root = el("div", "luna-progress-toast");
 	private readonly label = el("div", "luna-progress-label");
@@ -125,9 +149,23 @@ export class ProgressToast {
 		unloads.add(this.remove);
 	}
 
-	public update(label: string, detail = "", progress?: number) {
+	/** `detail` is one line of text, or several lines that each get their own row (the box grows with them) */
+	public update(label: string, detail: string | ProgressLine[] = "", progress?: number) {
 		this.label.textContent = label;
-		this.detail.textContent = detail;
+		if (typeof detail === "string") {
+			this.detail.className = "luna-progress-detail";
+			this.detail.textContent = detail;
+		} else {
+			this.detail.className = "luna-progress-detail luna-progress-lines";
+			this.detail.replaceChildren(
+				...detail.map(({ text, value }) => {
+					const line = el("div", "luna-progress-line");
+					line.append(el("span", "luna-progress-line-text", text));
+					if (value !== undefined) line.append(el("span", "luna-progress-line-value", value));
+					return line;
+				}),
+			);
+		}
 		this.bar.style.display = progress === undefined ? "none" : "";
 		if (progress !== undefined) this.fill.style.width = `${Math.max(0, Math.min(1, progress)) * 100}%`;
 	}
