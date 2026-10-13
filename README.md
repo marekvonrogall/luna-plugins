@@ -220,7 +220,7 @@ https://github.com/marekvonrogall/luna-plugins/releases/download/latest/store.js
 ```
 
 <p align="center">
-  <img width="818" height="199" alt="Adding the store in Luna Settings" src="https://github.com/user-attachments/assets/ab72ec3b-2515-4cf9-a24d-17ee235b8f40" />
+  <img alt="Adding the store in Luna Settings" src="resources/store.png" />
 </p>
 ## Development
 
