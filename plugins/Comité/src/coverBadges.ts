@@ -1,11 +1,12 @@
 import type { LunaUnloads } from "@luna/core";
 import { redux } from "@luna/lib";
 
-import { albumAverage, artistAverage, playlistAverage, type AverageResult } from "./averages";
+import { albumAverage, artistAverage, artistCatalogShare, artistCatalogShareIfLoaded, playlistAverage, type AverageResult, type CatalogShare } from "./averages";
 import { trace } from "./core";
-import { ratingListeners, ratingsVersion } from "./ratings";
+import { ratingListeners, ratingOf, ratingsVersion } from "./ratings";
+import { stars } from "./store";
 
-type Kind = "playlist" | "album" | "artist";
+type Kind = "playlist" | "album" | "artist" | "track";
 
 const BADGE = "comite-cover-badge";
 const TABS: Record<string, Kind> = { playlists: "playlist", albums: "album", artists: "artist" };
@@ -13,6 +14,7 @@ const LINKS: Record<Kind, RegExp> = {
 	playlist: /^\/playlist\/([0-9a-f-]{36})/i,
 	album: /^\/album\/(\d+)/,
 	artist: /^\/artist\/(\d+)/,
+	track: /^\/track\/(\d+)/,
 };
 
 /** Average badge in the top left of playlist / album covers and in the middle of artist pictures */
@@ -21,23 +23,38 @@ export const COVER_BADGE_CSS = `
 /* Artist pictures have their play button in the middle: step aside while hovering */
 .${BADGE}[data-kind="artist"] { transition: opacity 0.15s; }
 :is([data-test^="artist-card-"], a[data-test="cell-cover"]):hover .${BADGE}[data-kind="artist"] { opacity: 0; }
+/* Search pop-up: the play button covers the whole small image, so every badge steps aside */
+[data-test*="-direct-hit-"] .${BADGE} { transition: opacity 0.15s; }
+[data-test*="-direct-hit-"]:hover .${BADGE} { opacity: 0; }
 /* Some cover wrappers (artist page cards) stretch every child over the image: keep the badge a small pill */
 .${BADGE} { width: auto !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; max-width: calc(100% - 16px); right: auto !important; bottom: auto !important; display: inline-flex !important; box-sizing: border-box; object-fit: initial; }
 .${BADGE} > span { color: #fff !important; font: inherit !important; letter-spacing: normal; }
 .${BADGE} > svg.comite-badge-star { display: block; flex: none; width: 1em !important; height: 1em !important; margin: 0 !important; fill: #ffd432 !important; color: #ffd432 !important; }
 .${BADGE}[data-kind="artist"] { top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 13px; }
+/* Small covers (search results): a smaller pill that fits a 64px cover */
+.${BADGE}[data-variant="small"] { top: 3px; left: 3px; gap: 2px; padding: 0 4px; border-radius: 4px; max-width: calc(100% - 6px); font-size: 10px !important; line-height: 15px !important; }
+.${BADGE}[data-variant="small"][data-kind="artist"] { top: 50%; left: 50%; }
+.${BADGE}[data-variant="small"] .comite-badge-ring rect { x: 0.5px; y: 0.5px; rx: 3.5px; ry: 3.5px; width: calc(100% - 1px); height: calc(100% - 1px); stroke-width: 1px; }
 .${BADGE}[data-variant="large"] { top: 12px; left: 12px; padding: 3px 9px; font-size: 15px !important; line-height: 22px !important; }
 /* Artist page: inline after "x fans" */
 .${BADGE}[data-role="solo"] > svg.comite-badge-star { fill: #ff8cc6 !important; color: #ff8cc6 !important; }
 .${BADGE}[data-variant="inline"] { position: relative; top: auto; left: auto; transform: none; margin-left: 10px; vertical-align: middle; font-size: 13px !important; background: rgba(255, 255, 255, 0.1); }
-/* Loading: the pill's border fills clockwise with the share of the playlist read */
+/* The pill's border fills clockwise (from the top left) with the share of songs rated; while loading, with the share read */
 .${BADGE} > svg.comite-badge-ring { position: absolute; inset: 0; width: 100% !important; height: 100% !important; overflow: visible; fill: none !important; pointer-events: none; }
 .comite-badge-ring rect { width: calc(100% - 1.5px); height: calc(100% - 1.5px); stroke-width: 1.5px; }
 .comite-badge-ring .track { stroke: rgba(255, 255, 255, 0.18); }
-.comite-badge-ring .bar { stroke: #ffd432; stroke-dasharray: 100; transition: stroke-dashoffset 0.25s linear; }
+.comite-badge-ring .bar { stroke: #ffd432; stroke-dasharray: 100; transition: stroke-dashoffset 0.35s ease-out; }
 `;
 
 type Variant = "grid" | "large" | "inline";
+
+/** Grid covers narrower than this (search results) get the small pill */
+const SMALL_COVER = 120;
+const badgeVariant = (card: Card) => {
+	if (card.variant !== "grid") return card.variant;
+	const width = card.holder.getBoundingClientRect().width;
+	return width > 0 && width < SMALL_COVER ? "small" : "grid";
+};
 /** `page`: the page the card was found on, so cards of a previous page are dropped */
 type Card = { kind: Kind; id: string; holder: HTMLElement; variant: Variant; page: string; visible: boolean; computed: number; token: number };
 
@@ -104,13 +121,14 @@ const ensureBadge = (card: Card, role: BadgeRole = "main") => {
 		badge = document.createElement("div");
 		badge.className = BADGE;
 		badge.dataset.kind = card.kind;
-		badge.dataset.variant = card.variant;
 		badge.dataset.role = role;
 		if (card.variant !== "inline" && getComputedStyle(card.holder).position === "static") card.holder.style.position = "relative";
 		// The pink badge always sits right of the yellow one
 		const solo = role === "main" ? card.holder.querySelector(`:scope > .${BADGE}[data-role="solo"]`) : null;
 		card.holder.insertBefore(badge, solo);
 	}
+	// Measured on every update, so a cover that changes size gets the right pill
+	badge.dataset.variant = badgeVariant(card);
 	return badge;
 };
 
@@ -123,43 +141,86 @@ const createStar = () => {
 	return star;
 };
 
-/** Pill with "…" whose border fills clockwise (starting top left) as pages are read */
+/** Border ring that fills clockwise (starting top left); reuses the badge's ring so changes animate */
+const ringOf = (badge: HTMLElement) => {
+	let ring = badge.querySelector<SVGSVGElement>(":scope > svg.comite-badge-ring");
+	if (ring === null) {
+		ring = document.createElementNS(SVG, "svg");
+		ring.classList.add("comite-badge-ring");
+		// pathLength 100 makes the dash offset a percentage of the rounded outline
+		const rect = (className: string) =>
+			`<rect class="${className}" x="0.75" y="0.75" rx="5.25" ry="5.25" pathLength="100"${className === "bar" ? ' stroke-dashoffset="100"' : ""}/>`;
+		ring.innerHTML = rect("track") + rect("bar");
+	}
+	return ring;
+};
+const setRing = (ring: SVGSVGElement, fraction: number) =>
+	ring.querySelector(".bar")?.setAttribute("stroke-dashoffset", String(100 - Math.round(Math.max(0, Math.min(1, fraction)) * 100)));
+
+/** Pill with "…" whose border fills as pages are read */
 const showLoading = (card: Card) => {
 	const badge = ensureBadge(card);
 	const value = document.createElement("span");
 	value.textContent = "...";
-	const ring = document.createElementNS(SVG, "svg");
-	ring.classList.add("comite-badge-ring");
-	// pathLength 100 makes the dash offset a percentage of the rounded outline
-	const rect = (className: string) =>
-		`<rect class="${className}" x="0.75" y="0.75" rx="5.25" ry="5.25" pathLength="100"${className === "bar" ? ' stroke-dashoffset="100"' : ""}/>`;
-	ring.innerHTML = rect("track") + rect("bar");
+	const ring = ringOf(badge);
+	setRing(ring, 0);
 	badge.replaceChildren(createStar(), value, ring);
 	badge.title = "Computing the average rating…";
-	return (fraction: number) => ring.querySelector(".bar")?.setAttribute("stroke-dashoffset", String(100 - Math.round(fraction * 100)));
+	return (fraction: number) => setRing(ring, fraction);
 };
 
-const fillBadge = (badge: HTMLElement, value: number, title: string) => {
+/** `share`: share of the songs rated (0-1), shown as the border ring; without it there's no ring */
+const fillBadge = (badge: HTMLElement, value: number, title: string, share?: number) => {
 	const text = document.createElement("span");
 	text.textContent = value.toFixed(2);
-	badge.replaceChildren(createStar(), text);
+	if (share === undefined) {
+		badge.replaceChildren(createStar(), text);
+	} else {
+		const ring = ringOf(badge);
+		badge.replaceChildren(createStar(), text, ring);
+		// A new ring starts empty: set the share a frame later so it fills with an animation
+		if (ring.querySelector(".bar")?.getAttribute("stroke-dashoffset") === "100") requestAnimationFrame(() => setRing(ring, share));
+		else setRing(ring, share);
+	}
 	badge.title = title;
 };
 
 const songs = (count: number) => `${count} rated song${count === 1 ? "" : "s"}`;
 
-const render = (card: Card, result: AverageResult | undefined) => {
+const percent = (share: number) => `${Math.round(share * 100)}%`;
+
+/** `catalog`: artist pages only, the share of the artist's own songs that is rated (shown as the ring) */
+const render = (card: Card, result: AverageResult | undefined, catalog?: CatalogShare) => {
 	if (result?.kind !== "average") return removeBadge(card);
+	// A single song shows its own rating, not an average
+	if (card.kind === "track") return fillBadge(ensureBadge(card), result.value, `Rated ${stars(result.value)}`);
 	// Artist page: pink = songs by the artist alone; yellow (all songs) only if rated collaborations make it differ
 	const artistPage = card.kind === "artist" && card.variant === "inline";
 	const solo = artistPage ? result.solo : undefined;
 	const showMain = solo === undefined || (result.collabRated ?? 0) > 0;
+	const catalogShare = catalog === undefined ? undefined : catalog.rated / catalog.total;
+	const catalogText =
+		catalog === undefined ? "" : `\n${percent(catalogShare!)} of the songs on this artist's albums, EPs and singles are rated (${catalog.rated} of ${catalog.total})`;
 	if (showMain) {
-		const total = result.total !== undefined ? ` (of ${result.total})` : "";
-		fillBadge(ensureBadge(card), result.value, `Average of ${songs(result.rated)}${total}${artistPage ? ", including songs with other artists" : ""}`);
+		// Share of songs rated, when the total is known (playlists; albums when TIDAL has their song count; artist pages)
+		const share = artistPage ? catalogShare : result.total !== undefined && result.total > 0 ? Math.min(1, result.rated / result.total) : undefined;
+		const total = !artistPage && result.total !== undefined ? ` (of ${result.total}, ${percent(share ?? 0)} rated)` : "";
+		fillBadge(ensureBadge(card), result.value, `Average of ${songs(result.rated)}${total}${artistPage ? ", including songs with other artists" : ""}${catalogText}`, share);
 	} else removeBadge(card, "main");
-	if (solo !== undefined) fillBadge(ensureBadge(card, "solo"), solo.value, `Average of ${songs(solo.rated)} by this artist alone (no features or collaborations)`);
+	// The ring goes on the yellow badge, or on the pink one if that's the only one
+	if (solo !== undefined)
+		fillBadge(
+			ensureBadge(card, "solo"),
+			solo.value,
+			`Average of ${songs(solo.rated)} by this artist alone (no features or collaborations)${showMain ? "" : catalogText}`,
+			showMain ? undefined : catalogShare,
+		);
 	else removeBadge(card, "solo");
+};
+
+const trackRating = (trackId: string): AverageResult => {
+	const rating = ratingOf(trackId);
+	return rating > 0 ? { kind: "average", value: rating, rated: 1 } : { kind: "unrated" };
 };
 
 const evaluate = async (card: Card, force = false) => {
@@ -176,8 +237,10 @@ const evaluate = async (card: Card, force = false) => {
 			setProgress ??= showLoading(card);
 			setProgress(fraction);
 		};
-		const result =
-			card.kind === "album"
+		const result: AverageResult =
+			card.kind === "track"
+				? trackRating(card.id)
+				: card.kind === "album"
 				? albumAverage(card.id)
 				: card.kind === "artist"
 					? artistAverage(card.id)
@@ -189,7 +252,14 @@ const evaluate = async (card: Card, force = false) => {
 		}
 		if (token !== card.token || !card.holder.isConnected) return;
 		card.computed = version;
-		render(card, result);
+		// Artist page: the ring needs the artist's catalogue (2 requests the first time, then kept for the session)
+		const artistPage = card.kind === "artist" && card.variant === "inline" && result.kind === "average";
+		const catalog = artistPage ? artistCatalogShareIfLoaded(card.id) : undefined;
+		render(card, result, catalog);
+		if (artistPage && catalog === undefined) {
+			const loaded = await artistCatalogShare(card.id).catch((err) => void trace.warn.withContext(`Couldn't load the catalogue of artist ${card.id}`)(err as Error));
+			if (loaded !== undefined && token === card.token && card.holder.isConnected) render(card, result, loaded);
+		}
 		if (force && result.kind === "unrated") trace.msg.log(`None of the songs in this ${card.kind === "artist" ? "artist's catalogue" : card.kind} are rated yet`);
 	} catch (err) {
 		if (token === card.token) card.computed = version;
@@ -252,20 +322,35 @@ const scanAlbumCards = (root: HTMLElement) => {
 	}
 };
 
-/** "Related albums" / "Related artists" cells (cover links); playlists are skipped since they would need requests */
+/** Cover links of albums, artists and songs ("Related albums", search results…); playlists are skipped since they would need requests */
 const scanCells = (root: HTMLElement) => {
 	for (const link of root.querySelectorAll<HTMLAnchorElement>('a[data-test="cell-cover"]')) {
 		const href = link.getAttribute("href") ?? "";
 		const album = LINKS.album.exec(href);
 		const artist = album ? null : LINKS.artist.exec(href);
-		const kind: Kind | undefined = album ? "album" : artist ? "artist" : undefined;
-		const id = album?.[1] ?? artist?.[1];
+		const track = album || artist ? null : LINKS.track.exec(href);
+		const kind: Kind | undefined = album ? "album" : artist ? "artist" : track ? "track" : undefined;
+		const id = album?.[1] ?? artist?.[1] ?? track?.[1];
 		const img = link.querySelector<HTMLElement>(COVER);
 		if (kind === undefined || id === undefined || img === null) continue;
 		const existing = cards.get(link);
 		if (existing?.id === id && existing.holder.isConnected) continue;
 		if (existing !== undefined) forget(link, existing);
 		addCard(link, img, kind, id, "grid");
+	}
+};
+
+/** Top results in the search pop-up: artists, albums and songs (playlists are skipped since they would need requests) */
+const scanDirectHits = () => {
+	for (const hit of document.querySelectorAll<HTMLElement>('[data-test*="-direct-hit-"]')) {
+		const match = /^(artist|album|track)-direct-hit-(\d+)$/.exec(hit.dataset.test ?? "");
+		const img = hit.querySelector<HTMLElement>(COVER);
+		if (match === null || img === null) continue;
+		const [, kind, id] = match as unknown as [string, Kind, string];
+		const existing = cards.get(hit);
+		if (existing?.id === id && existing.holder.isConnected) continue;
+		if (existing !== undefined) forget(hit, existing);
+		addCard(hit, img, kind, id, "grid");
 	}
 };
 
@@ -307,6 +392,8 @@ const scan = () => {
 	if (page === undefined || kind === undefined || pageKey === undefined) return;
 	if (pageKey !== lastPage) seen = new WeakMap();
 	lastPage = pageKey;
+	// The search pop-up can open on any page
+	scanDirectHits();
 	const root = document.querySelector<HTMLElement>('[data-test="main"]') ?? document.querySelector<HTMLElement>("main");
 	if (root === null) return;
 	if (page.cardsOnly) return scanFreeCards(root);

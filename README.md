@@ -2,11 +2,12 @@
 
 A collection of plugins for [TidaLuna](https://github.com/Inrixia/TidaLuna), the client mod for the TIDAL desktop app.
 
-| Plugin                  | Purpose                                                                                                               |
-|-------------------------|-----------------------------------------------------------------------------------------------------------------------|
-| [Comité](#comité)       | Half-star song ratings, stored in your own TIDAL playlists, with averages on every cover and a dedicated rating mode  |
-| [Librarian](#librarian) | Downloads songs, albums and playlists as tagged files into a structured local library, skipping what you already have |
-| [Collector](#collector) | Turns songs, playlists, artists or your whole collection into complete albums inside one playlist                     |
+| Plugin                    | Purpose                                                                                                               |
+|---------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| [Comité](#comité)         | Half-star song ratings, stored in your own TIDAL playlists, with averages on every cover and a dedicated rating mode  |
+| [Librarian](#librarian)   | Downloads songs, albums and playlists as tagged files into a structured local library, skipping what you already have |
+| [Collector](#collector)   | Turns songs, playlists, artists or your whole collection into complete albums inside one playlist                     |
+| [Translator](#translator) | Shows a translation under every line of the lyrics, and which languages a playlist is in                              |
 
 All plugins are distributed through a single store. See [Installation](#installation).
 
@@ -207,6 +208,33 @@ the discographies of the artists you follow.
 
 ---
 
+## Translator
+
+Translator shows a translation beneath the original lyrics, and which languages the songs of a playlist are in.
+
+### Translated lyrics
+
+Open the lyrics of a song and every line gets its translation beneath it. Songs that mix several languages are
+supported: each part is translated, and lines already in your target language stay as they are.
+
+### Playlist languages
+
+Playlist pages get a **Languages** button next to TIDAL's *More* button. It shows a chart of the languages in the
+playlist, how many songs are in each language, and how many songs have no lyrics. A language only counts for a song if
+it makes up a noticeable part of it, so a single foreign word doesn't add a language.
+
+Once a playlist has been analyzed, the button shows a small version of the chart, and opening it again is instant until
+the playlist changes.
+
+### Settings
+
+| Setting         | Description                                                                                         |
+|-----------------|-----------------------------------------------------------------------------------------------------|
+| Target language | The language lyrics are translated into. Defaults to your system language.                          |
+| Never translate | Languages that stay as they are, for example languages you speak. Several can be selected.          |
+
+---
+
 ## Installation
 
 Add the store to TidaLuna to install any of the plugins and receive updates automatically.
@@ -222,6 +250,7 @@ https://github.com/marekvonrogall/luna-plugins/releases/download/latest/store.js
 <p align="center">
   <img alt="Adding the store in Luna Settings" src="resources/store.png" />
 </p>
+
 ## Development
 
 Requires [Node.js](https://nodejs.org) and [pnpm](https://pnpm.io).

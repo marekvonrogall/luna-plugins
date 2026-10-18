@@ -1,6 +1,7 @@
 import { redux } from "@luna/lib";
 
 import { fetchPlaylistPage } from "../../../shared/playlistItems";
+import { getArtistCatalog } from "./api";
 import { getTrackMeta, ratedTracks, ratingsVersion } from "./ratings";
 
 /** Playlists show an average once this share of their songs is rated */
@@ -80,6 +81,44 @@ export const artistAverage = (artistId: string): AverageResult => {
 		solo: solo === undefined ? undefined : { value: solo.reduce((sum, rating) => sum + rating, 0) / solo.length, rated: solo.length },
 		collabRated: ratings.length - (solo?.length ?? 0),
 	};
+};
+
+/** Share of an artist's catalogue that is rated */
+export type CatalogShare = { rated: number; total: number };
+
+/** Artist catalogues (2 requests each), loaded once per session */
+const catalogs = new Map<string, { loading: Promise<void>; albumIds?: Set<string>; total?: number }>();
+
+const catalogShare = (albumIds: Set<string>, total: number): CatalogShare | undefined => {
+	if (total <= 0) return undefined;
+	index();
+	let rated = 0;
+	for (const albumId of albumIds) rated += byAlbum.get(albumId)?.length ?? 0;
+	return { rated: Math.min(rated, total), total };
+};
+
+/** Without a request: the share if the artist's catalogue is already loaded */
+export const artistCatalogShareIfLoaded = (artistId: string): CatalogShare | undefined => {
+	const catalog = catalogs.get(artistId);
+	return catalog?.albumIds === undefined || catalog.total === undefined ? undefined : catalogShare(catalog.albumIds, catalog.total);
+};
+
+/** Songs on the artist's own albums, EPs and singles that are rated (artist pages only: costs 2 requests the first time) */
+export const artistCatalogShare = async (artistId: string): Promise<CatalogShare | undefined> => {
+	let catalog = catalogs.get(artistId);
+	if (catalog === undefined) {
+		const entry: { loading: Promise<void>; albumIds?: Set<string>; total?: number } = { loading: Promise.resolve() };
+		entry.loading = limited(() => getArtistCatalog(artistId)).then(({ albumIds, totalTracks }) => {
+			entry.albumIds = albumIds;
+			entry.total = totalTracks;
+		});
+		// Try again next time if it failed
+		entry.loading.catch(() => catalogs.delete(artistId));
+		catalogs.set(artistId, entry);
+		catalog = entry;
+	}
+	await catalog.loading;
+	return artistCatalogShareIfLoaded(artistId);
 };
 
 /** At most two page requests at a time, so a page full of covers can't trigger rate limiting */

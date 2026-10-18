@@ -108,8 +108,11 @@ const fetchPaged = async <T>(path: string, limit: number, what: string): Promise
 	return items;
 };
 
-/** Album ids of an artist's albums, EPs and singles ("appears on" compilations excluded), clean/explicit twins merged */
-const getArtistReleases = async (artistId: string): Promise<redux.Album[]> => {
+/**
+ * An artist's albums, EPs and singles ("appears on" compilations excluded): `releases` with clean/explicit twins merged
+ * (the explicit one kept), `all` including both twins
+ */
+const getArtistReleases = async (artistId: string): Promise<{ releases: redux.Album[]; all: redux.Album[] }> => {
 	const [albums, singles] = await Promise.all([
 		fetchPaged<redux.Album>(`artists/${artistId}/albums`, 100, "Failed to load the artist's albums"),
 		fetchPaged<redux.Album>(`artists/${artistId}/albums?filter=EPSANDSINGLES`, 100, "Failed to load the artist's singles"),
@@ -121,10 +124,22 @@ const getArtistReleases = async (artistId: string): Promise<redux.Album[]> => {
 		const existing = releases.get(key);
 		if (existing === undefined || (!existing.explicit && album.explicit)) releases.set(key, album);
 	}
-	return [...releases.values()];
+	return { releases: [...releases.values()], all: [...albums, ...singles] };
 };
 
-export const getArtistAlbumIds = async (artistId: string) => (await getArtistReleases(artistId)).map((album) => String(album.id));
+export const getArtistAlbumIds = async (artistId: string) => (await getArtistReleases(artistId)).releases.map((album) => String(album.id));
+
+/**
+ * Song count of an artist's own albums, EPs and singles (clean/explicit twins counted once),
+ * and the ids of all those releases (both twins, so a rating on either version counts)
+ */
+export const getArtistCatalog = async (artistId: string) => {
+	const { releases, all } = await getArtistReleases(artistId);
+	return {
+		albumIds: new Set(all.map((album) => String(album.id))),
+		totalTracks: releases.reduce((sum, album) => sum + (album.numberOfTracks ?? 0), 0),
+	};
+};
 
 
 /** All favorited (hearted) tracks, as media items */
