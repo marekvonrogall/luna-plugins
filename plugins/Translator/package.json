@@ -1,6 +1,6 @@
 {
 	"name": "Translator",
-	"description": "Shows a translation under every line of the lyrics, and which languages a playlist is in.",
+	"description": "Translate lyrics & view playlist language stats.",
 	"homepage": "https://github.com/marekvonrogall/luna-plugins#translator",
 	"author": {
 		"name": "marekvonrogall",

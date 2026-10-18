@@ -1,6 +1,6 @@
 {
 	"name": "Collector",
-	"description": "Right-click songs, an album or a playlist and add the full albums of every song to one of your playlists (duplicates skipped).",
+	"description": "Bulk-Add songs/albums/playlists/artists to playlists.",
 	"homepage": "https://github.com/marekvonrogall/luna-plugins#collector",
 	"author": {
 		"name": "marekvonrogall",
