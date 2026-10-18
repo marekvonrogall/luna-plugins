@@ -385,7 +385,10 @@ export const startRatingMode = async (source: RateSource) => {
 		return entry;
 	};
 
-	/** A rated song with a score close to the new song's (random among the closest), not used against it yet */
+	/**
+	 * A rated song from the rating step closest to the new song's score, random within that step.
+	 * Songs that dueled least this session go first, so every song of a step gets its turn
+	 */
 	const pickOpponent = () => {
 		const song = current();
 		if (song === undefined || duelState === undefined) return;
@@ -393,13 +396,17 @@ export const startRatingMode = async (source: RateSource) => {
 		const rated = ratedTracks();
 		let candidates = [...rated.keys()].filter((id) => id !== song.id && !duelState!.used.has(id));
 		if (candidates.length === 0) candidates = [...rated.keys()].filter((id) => id !== song.id && id !== duelState!.opponentId);
-		const closest = candidates
-			.map((id) => ({ id, distance: Math.abs((scores.get(id)?.score ?? rated.get(id)!) - target) }))
-			.sort((a, b) => a.distance - b.distance)
-			.slice(0, 6);
-		const pick = closest[Math.floor(Math.random() * closest.length)];
-		duelState.opponentId = pick?.id;
-		if (pick) duelState.used.add(pick.id);
+		const below = Math.floor(target * 2) / 2;
+		const wanted = Math.min(5, Math.max(0.5, Math.random() < (target - below) * 2 ? below + 0.5 : below));
+		const stepOf = (id: string) => toRating(scores.get(id)?.score ?? rated.get(id)!);
+		const gamesOf = (id: string) => scores.get(id)?.games ?? 0;
+		const nearest = Math.min(...candidates.map((id) => Math.abs(stepOf(id) - wanted)));
+		const sameStep = candidates.filter((id) => Math.abs(stepOf(id) - wanted) === nearest);
+		const fewest = Math.min(...sameStep.map(gamesOf));
+		const pool = sameStep.filter((id) => gamesOf(id) === fewest);
+		const pick = pool[Math.floor(Math.random() * pool.length)];
+		duelState.opponentId = pick;
+		if (pick !== undefined) duelState.used.add(pick);
 	};
 
 	const coverUrl = (uuid?: string | null) => (uuid ? ContentBase.formatCoverUrl(uuid, { res: "320" }) : undefined);
