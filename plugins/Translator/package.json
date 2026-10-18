@@ -1,0 +1,12 @@
+{
+	"name": "Translator",
+	"description": "Shows a translation under every line of the lyrics.",
+	"homepage": "https://github.com/marekvonrogall/luna-plugins#translator",
+	"author": {
+		"name": "marekvonrogall",
+		"url": "https://github.com/marekvonrogall",
+		"avatarUrl": "https://avatars.githubusercontent.com/u/110893394"
+	},
+	"main": "./src/index.ts",
+	"type": "module"
+}

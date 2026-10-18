@@ -64,6 +64,8 @@ importers:
         specifier: ^1.6.3
         version: 1.6.3
 
+  plugins/Translator: {}
+
 packages:
 
   '@electron/get@2.0.3':
