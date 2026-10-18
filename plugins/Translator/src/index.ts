@@ -1,6 +1,8 @@
 import { Tracer, type LunaUnload } from "@luna/core";
 import { StyleTag } from "@luna/lib";
 
+import { setupLanguageButton } from "./languageButton";
+import { LANGUAGE_PANEL_CSS } from "./languagePanel";
 import { getSongTranslation, showLine } from "./lyrics";
 import { settingsListeners } from "./Settings";
 
@@ -33,6 +35,7 @@ new StyleTag(
 [data-test="lyrics-text"] > .${TRANSLATION}[data-current] {
 	opacity: 0.9 !important;
 }
+${LANGUAGE_PANEL_CSS}
 `,
 );
 
@@ -130,6 +133,8 @@ const observer = new MutationObserver(queueUpdate);
 observer.observe(document.body, { childList: true, subtree: true });
 settingsListeners.add(queueUpdate);
 queueUpdate();
+
+setupLanguageButton(unloads);
 
 unloads.add(() => {
 	observer.disconnect();
