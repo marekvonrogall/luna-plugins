@@ -199,6 +199,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	};
 
 	const rows = new Map<string, Row>();
+	/** Songs in the "Queued by you" section */
+	let queuedUids = new Set<string>();
 	/** Songs being cleared, hidden until TIDAL has removed them */
 	const removing = new Set<string>();
 	const stripItems = new Map<string, HTMLButtonElement>();
@@ -294,12 +296,177 @@ const createPanel = (unloads: LunaUnloads) => {
 		else if (miniCover.src !== miniSrc) miniCover.src = miniSrc;
 	};
 
-	const renderRecent = (played: { element: Element_; index: number }[]) => {
+	// #region Played "Queued by you" songs
+	/**
+	 * TIDAL drops "Play next"/"Add to queue" songs from the queue once they're played or skipped. Office remembers them
+	 * with the song they came after (their "anchor"), shows them in the history there, and puts them back into the queue
+	 * when playback goes back to that song.
+	 */
+	type PlayedQueued = { key: string; mediaItemId: redux.ItemId; context: Element_["context"]; anchor: string; seq: number };
+	type HistoryEntry = { element: Element_; index: number; virtual?: string };
+	let playedQueued: PlayedQueued[] = [];
+	let playedSeq = 0;
+	let snapshot: { elements: Element_[]; currentIndex: number } | undefined;
+
+	/** Puts remembered songs back into the queue, right after their anchors */
+	const requeue = (entries: PlayedQueued[]) => {
+		const { elements, currentIndex } = PlayState.playQueue;
+		const groups = new Map<string, PlayedQueued[]>();
+		for (const entry of [...entries].sort((a, b) => a.seq - b.seq)) groups.set(entry.anchor, [...(groups.get(entry.anchor) ?? []), entry]);
+		const ordered = [...groups]
+			.map(([anchor, items]) => ({ index: elements.findIndex((element) => element.uid === anchor), items }))
+			.filter(({ index }) => index >= currentIndex)
+			// From the back, so earlier positions stay valid
+			.sort((a, b) => b.index - a.index);
+		for (const { index, items } of ordered) {
+			const mediaItemIds = items.map((item) => item.mediaItemId);
+			const context = items[0].context;
+			if (index === currentIndex) redux.actions["playQueue/ADD_NEXT"]({ mediaItemIds, context });
+			else redux.actions["playQueue/ADD_AT_INDEX"]({ index: index + 1, mediaItemIds, context });
+		}
+	};
+
+	/** Compares the queue with the last one: which queued songs did TIDAL drop after playing or skipping them? */
+	const trackPlayedQueued = (queue: redux.PlayQueue) => {
+		const previous = snapshot;
+		snapshot = { elements: queue.elements, currentIndex: queue.currentIndex };
+		if (replaying || !previous || (previous.elements === queue.elements && previous.currentIndex === queue.currentIndex)) return;
+		const present = new Set(queue.elements.map((element) => element.uid));
+		const oldCurrent = previous.elements[previous.currentIndex];
+		const newCurrent = queue.elements[queue.currentIndex];
+		const moved = oldCurrent?.uid !== newCurrent?.uid;
+		const newCurrentWasAt = newCurrent ? previous.elements.findIndex((element) => element.uid === newCurrent.uid) : -1;
+		previous.elements.forEach((element, index) => {
+			if (element.priority !== "priority_keep" || present.has(element.uid)) return;
+			// Played (it was the current song) or skipped over; not removed by hand from what's coming up
+			const passed = index <= previous.currentIndex || (moved && newCurrentWasAt > index);
+			if (!passed) return;
+			let anchor: string | undefined;
+			for (let i = index - 1; i >= 0; i--)
+				if (present.has(previous.elements[i].uid)) {
+					anchor = previous.elements[i].uid;
+					break;
+				}
+			if (anchor === undefined) return;
+			playedSeq++;
+			playedQueued.push({ key: `played-${playedSeq}`, mediaItemId: element.mediaItemId, context: element.context, anchor, seq: playedSeq });
+		});
+		// Forget songs whose place in the history is gone (queue replaced or cleared)
+		playedQueued = playedQueued.filter((entry) => present.has(entry.anchor)).slice(-100);
+		// Playback went back to (or before) their place: back into the queue
+		const back = playedQueued.filter((entry) => queue.elements.findIndex((element) => element.uid === entry.anchor) >= queue.currentIndex);
+		if (back.length > 0) {
+			playedQueued = playedQueued.filter((entry) => !back.includes(entry));
+			setTimeout(() => requeue(back));
+		}
+	};
+
+	/** History, most recent first, with the remembered songs at their places */
+	const historyEntries = (elements: Element_[], currentIndex: number): HistoryEntry[] => {
+		const entries: HistoryEntry[] = [];
+		for (let index = 0; index < currentIndex; index++) {
+			const element = elements[index];
+			entries.push({ element, index });
+			for (const entry of playedQueued.filter((played) => played.anchor === element.uid).sort((a, b) => a.seq - b.seq))
+				entries.push({ element: { uid: entry.key, mediaItemId: entry.mediaItemId, priority: "priority_history", context: entry.context }, index: -1, virtual: entry.key });
+		}
+		return entries.reverse();
+	};
+
+	/** Resolves once the store passes `check` (or after `timeout`): TIDAL finishes some queue changes with a delay */
+	const waitFor = (check: () => boolean, timeout = 2500) =>
+		new Promise<boolean>((resolve) => {
+			if (check()) return resolve(true);
+			let unsubscribe = () => {};
+			const timer = setTimeout(() => {
+				unsubscribe();
+				resolve(false);
+			}, timeout);
+			unsubscribe = redux.store.subscribe(() => {
+				if (!check()) return;
+				unsubscribe();
+				clearTimeout(timer);
+				resolve(true);
+			});
+		});
+
+	/**
+	 * Plays a song from the history (TIDAL's or remembered) with one jump. Everything that played after it, and the song
+	 * that was playing, follows as "Queued by you" in that order, ahead of what was already queued.
+	 */
+	let replaying = false;
+	const replayFrom = async (uid: string) => {
+		if (replaying) return;
+		const queue = PlayState.playQueue;
+		const history = historyEntries(queue.elements, queue.currentIndex).reverse();
+		const position = history.findIndex(({ element }) => element.uid === uid);
+		if (position < 0) return;
+		const target = history[position];
+		const current = queue.elements[queue.currentIndex];
+		const replay: HistoryEntry[] = [...history.slice(position + 1), ...(current ? [{ element: current, index: queue.currentIndex }] : [])];
+		const remembered = target.virtual ? playedQueued.find((entry) => entry.key === target.virtual) : undefined;
+		replaying = true;
+		try {
+			// They're coming up again now
+			const replayed = new Set([target.virtual, ...replay.map((entry) => entry.virtual)].filter(Boolean));
+			playedQueued = playedQueued.filter((entry) => !replayed.has(entry.key));
+
+			let targetUid = target.element.uid;
+			if (remembered) {
+				// Not in TIDAL's queue anymore: back in at its place first
+				const elements = PlayState.playQueue.elements;
+				const anchorIndex = elements.findIndex((element) => element.uid === remembered.anchor);
+				if (anchorIndex < 0) return;
+				const known = new Set(elements.map((element) => element.uid));
+				redux.actions["playQueue/ADD_AT_INDEX"]({ index: anchorIndex + 1, mediaItemIds: [remembered.mediaItemId], context: remembered.context });
+				await waitFor(() => PlayState.playQueue.elements.some((element) => !known.has(element.uid)));
+				const added = PlayState.playQueue.elements.find((element) => !known.has(element.uid));
+				if (!added) return;
+				targetUid = added.uid;
+			}
+
+			const targetIndex = PlayState.playQueue.elements.findIndex((element) => element.uid === targetUid);
+			if (targetIndex < 0) return;
+			PlayState.moveTo(targetIndex);
+			PlayState.play();
+			await waitFor(() => PlayState.playQueue.elements[PlayState.playQueue.currentIndex]?.uid === targetUid);
+
+			// TIDAL keeps its own songs as coming up again: they're replaced by the "Queued by you" ones
+			const tidalUids = new Set(replay.filter((entry) => !entry.virtual).map((entry) => entry.element.uid));
+			const comingUp = () => {
+				const { elements, currentIndex } = PlayState.playQueue;
+				return elements.filter((element, index) => index > currentIndex && tidalUids.has(element.uid));
+			};
+			for (const element of comingUp()) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
+			await waitFor(() => comingUp().length === 0);
+
+			if (replay.length > 0) {
+				const length = PlayState.playQueue.elements.length;
+				redux.actions["playQueue/ADD_NEXT"]({ mediaItemIds: replay.map(({ element }) => element.mediaItemId), context: { type: "UNKNOWN" } });
+				await waitFor(() => PlayState.playQueue.elements.length >= length + replay.length);
+			}
+		} finally {
+			// TIDAL may still be settling: don't treat that as songs being played
+			setTimeout(() => {
+				replaying = false;
+				snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
+			}, 800);
+		}
+	};
+	const playEntry = (node: HTMLElement) => {
+		const uid = node.dataset.uid;
+		const index = Number(node.dataset.index);
+		if (uid && (node.dataset.virtual || index < PlayState.playQueue.currentIndex)) replayFrom(uid);
+		else play(index);
+	};
+	// #endregion
+
+	const renderRecent = (played: HistoryEntry[]) => {
 		recent.hidden = played.length === 0 || mode === "history";
 		if (recent.hidden) return;
 		recentDetail.textContent = songCount(played.length);
 		const used = new Set<string>();
-		const nodes = played.slice(0, 30).map(({ element, index }) => {
+		const nodes = played.slice(0, 30).map(({ element, index, virtual }) => {
 			used.add(element.uid);
 			let item = stripItems.get(element.uid);
 			if (item === undefined) {
@@ -312,6 +479,9 @@ const createPanel = (unloads: LunaUnloads) => {
 				stripItems.set(element.uid, item);
 			}
 			item.dataset.index = String(index);
+			item.dataset.uid = element.uid;
+			if (virtual) item.dataset.virtual = virtual;
+			else delete item.dataset.virtual;
 			const info = trackInfo(element.mediaItemId, onLoad);
 			const label = info ? `${info.title} – ${artistNames(info)}` : "";
 			if (item.title !== label) {
@@ -324,7 +494,10 @@ const createPanel = (unloads: LunaUnloads) => {
 			return item;
 		});
 		for (const uid of stripItems.keys()) if (!used.has(uid)) stripItems.delete(uid);
-		const order = nodes.map((node) => node.dataset.index).join();
+		const order = played
+			.slice(0, 30)
+			.map(({ element }) => element.uid)
+			.join();
 		if (strip.dataset.order !== order) {
 			strip.dataset.order = order;
 			strip.replaceChildren(...nodes);
@@ -339,10 +512,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const currentInfo = current ? trackInfo(current.mediaItemId, onLoad) : undefined;
 		renderHero(current, currentInfo, queue);
 
-		const played = elements
-			.slice(0, Math.max(currentIndex, 0))
-			.map((element, index) => ({ element, index }))
-			.reverse();
+		const played = historyEntries(elements, Math.max(currentIndex, 0));
 		renderRecent(played);
 
 		const used = new Set<string>();
@@ -351,7 +521,12 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (mode === "history") {
 			queued.root.hidden = upNext.root.hidden = empty.hidden = true;
 			history.detail.textContent = songCount(played.length);
-			const nodes = played.map(({ element, index }) => updateRow(element, index, used));
+			const nodes = played.map(({ element, index, virtual }) => {
+				const node = updateRow(element, index, used);
+				if (virtual) node.dataset.virtual = virtual;
+				else delete node.dataset.virtual;
+				return node;
+			});
 			fillSection(history, nodes, played.map((p) => p.element.uid).join());
 			if (played.length === 0) history.list.replaceChildren(h("p", "oq-empty", "Songs you've played show up here."));
 		} else {
@@ -370,14 +545,12 @@ const createPanel = (unloads: LunaUnloads) => {
 				const nodes = items.map(({ element, index }) => updateRow(element, index, used));
 				fillSection(section, nodes, items.map((item) => item.element.uid).join());
 			};
-			fill(
-				queued,
-				upcoming.filter(({ element }) => element.priority === "priority_keep"),
-			);
-			fill(
-				upNext,
-				upcoming.filter(({ element }) => element.priority !== "priority_keep"),
-			);
+			// In play order: "Queued by you" is the run of queued songs right after the current one
+			const firstOther = upcoming.findIndex(({ element }) => element.priority !== "priority_keep");
+			const queuedItems = firstOther < 0 ? upcoming : upcoming.slice(0, firstOther);
+			queuedUids = new Set(queuedItems.map(({ element }) => element.uid));
+			fill(queued, queuedItems);
+			fill(upNext, firstOther < 0 ? [] : upcoming.slice(firstOther));
 			empty.hidden = upcoming.length > 0;
 		}
 		for (const uid of rows.keys()) if (!used.has(uid)) rows.delete(uid);
@@ -731,6 +904,26 @@ const createPanel = (unloads: LunaUnloads) => {
 		row.style.transform = `translateX(${centeredShift}px)`;
 	};
 
+	/**
+	 * While searching, TIDAL's invisible close-on-click layer covers the whole window. The queue is cut out of it so it
+	 * stays fully usable (right-click menus, hover, scrolling), and pressing anywhere in it closes the search instead.
+	 */
+	const BACKDROP = '#mainHeader [data-test="search-popover-backdrop"]';
+	let cutBackdrop: HTMLElement | undefined;
+	const uncutBackdrop = () => {
+		cutBackdrop?.style.removeProperty("clip-path");
+		cutBackdrop = undefined;
+	};
+	const cutQueueOut = (backdrop: HTMLElement | null, hole: DOMRect | undefined) => {
+		if (backdrop !== cutBackdrop) uncutBackdrop();
+		if (!backdrop || !hole) return uncutBackdrop();
+		cutBackdrop = backdrop;
+		const box = backdrop.getBoundingClientRect();
+		const [l, t, r, b] = [hole.left - box.left, hole.top - box.top, hole.right - box.left, hole.bottom - box.top].map(Math.round);
+		backdrop.style.clipPath = `path(evenodd, "M0 0H${Math.ceil(box.width)}V${Math.ceil(box.height)}H0Z M${l} ${t}H${r}V${b}H${l}Z")`;
+	};
+	const closeSearch = () => document.querySelector<HTMLElement>(BACKDROP)?.click();
+
 	// Remembered for when the queue is closed
 	let queueWidth = 0;
 	let queueTop = 0;
@@ -780,6 +973,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			const blockBottom = list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
 			setBox(searchBlock, searchLeft, top, width, blockBottom - top, origin);
 		} else unstylePopover();
+		cutQueueOut(searching ? document.querySelector<HTMLElement>(BACKDROP) : null, queueRect && open ? panel.getBoundingClientRect() : undefined);
 	};
 
 	let open = false;
@@ -900,6 +1094,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	let lastQueue: unknown;
 	let lastItems: unknown;
 	let lastView: unknown;
+	snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
 	const unsubscribe = redux.store.subscribe(() => {
 		const state = redux.store.getState();
 		// Queue, full-screen view or search opened/closed
@@ -914,6 +1109,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 		if (state.playQueue !== lastQueue || state.content.mediaItems !== lastItems) {
 			const queueChanged = state.playQueue !== lastQueue;
+			if (queueChanged) trackPlayedQueued(state.playQueue);
 			lastQueue = state.playQueue;
 			lastItems = state.content.mediaItems;
 			schedule();
@@ -994,6 +1190,18 @@ const createPanel = (unloads: LunaUnloads) => {
 	const elementAt = (index: number) => PlayState.playQueue.elements[index];
 
 	const openMenu = (row: HTMLElement, x: number, y: number) => {
+		const remembered = row.dataset.virtual ? playedQueued.find((played) => played.key === row.dataset.virtual) : undefined;
+		if (remembered) {
+			redux.actions["contextMenu/OPEN_MEDIA_ITEM"]({
+				type: "MEDIA_ITEM",
+				id: remembered.mediaItemId,
+				position: [x, y],
+				canBlock: true,
+				contextMenuLocation: "none",
+				sourceContext: remembered.context as redux.MediaCollectionContext,
+			});
+			return;
+		}
 		const index = Number(row.dataset.index);
 		const element = elementAt(index);
 		if (element === undefined) return;
@@ -1202,11 +1410,11 @@ const createPanel = (unloads: LunaUnloads) => {
 				case "next":
 					return setMode("next");
 				case "clear-queued":
-					return removeAll((element) => element.priority === "priority_keep");
+					return removeAll((element) => queuedUids.has(element.uid));
 				case "clear-next":
-					return removeAll((element) => element.priority !== "priority_keep", true);
+					return removeAll((element) => !queuedUids.has(element.uid), true);
 				case "play":
-					return play(Number(button.dataset.index));
+					return playEntry(button);
 				case "remove": {
 					const element = row && elementAt(Number(row.dataset.index));
 					if (element) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
@@ -1220,7 +1428,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			}
 			return;
 		}
-		if (row && !suppressClick) play(Number(row.dataset.index));
+		if (row && !suppressClick) playEntry(row);
 	});
 
 	panel.addEventListener("contextmenu", (e) => {
@@ -1235,7 +1443,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!row || e.target !== row) return;
 		if (e.key === "Enter" || e.key === " ") {
 			e.preventDefault();
-			play(Number(row.dataset.index));
+			playEntry(row);
 		} else if ((e.key === "Delete" || e.key === "Backspace") && mode === "next") {
 			const element = elementAt(Number(row.dataset.index));
 			if (element) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
@@ -1303,6 +1511,37 @@ const createPanel = (unloads: LunaUnloads) => {
 		autoScroll = requestAnimationFrame(autoScrollStep);
 	};
 
+	/** Any press (left, right, middle) outside the search results and the search field closes the search */
+	const onAnyPress = (e: PointerEvent) => {
+		if (!styledPopover || !(e.target instanceof Element)) return;
+		const target = e.target;
+		if (styledPopover.contains(target)) return;
+		const onBackdrop = target.closest(BACKDROP) !== null;
+		if (!onBackdrop && target.closest('#mainHeader [data-test="search-popover-container"]')) return;
+		// TIDAL closes it itself on a left click on its layer
+		if (onBackdrop && e.button === 0) return;
+		closeSearch();
+	};
+	/** Right-clicks on TIDAL's close layer go to what's under it */
+	const onContextMenu = (e: MouseEvent) => {
+		const backdrop = e.target instanceof Element ? e.target.closest<HTMLElement>(BACKDROP) : null;
+		if (!backdrop) return;
+		e.preventDefault();
+		e.stopPropagation();
+		backdrop.style.pointerEvents = "none";
+		const under = document.elementFromPoint(e.clientX, e.clientY);
+		backdrop.style.removeProperty("pointer-events");
+		under?.dispatchEvent(
+			new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY, button: 2 }),
+		);
+	};
+	window.addEventListener("pointerdown", onAnyPress, { capture: true });
+	window.addEventListener("contextmenu", onContextMenu, { capture: true });
+	unloads.add(() => {
+		window.removeEventListener("pointerdown", onAnyPress, { capture: true });
+		window.removeEventListener("contextmenu", onContextMenu, { capture: true });
+	});
+
 	panel.addEventListener("pointerdown", (e) => {
 		if (e.button !== 0 || mode !== "next") return;
 		const row = rowOf(e.target);
@@ -1369,6 +1608,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		unfitSearch();
 		unstylePopover();
 		uncenterButtons();
+		uncutBackdrop();
 		syncLyricsPlaceholder(undefined);
 		for (const [node, position] of lifted) node.style.position = position;
 		for (const [node, zIndex] of raised) node.style.zIndex = zIndex;

@@ -1,6 +1,6 @@
 {
 	"name": "Office",
-	"description": "Redesigns parts of TIDAL, offering a more professional look.",
+	"description": "An improved & redesigned listening queue for TIDAL.",
 	"homepage": "https://github.com/marekvonrogall/luna-plugins#office",
 	"author": {
 		"name": "marekvonrogall",
