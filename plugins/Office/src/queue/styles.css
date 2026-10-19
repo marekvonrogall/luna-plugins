@@ -103,8 +103,35 @@
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	padding-bottom: 16px;
-	scrollbar-width: thin;
-	scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+	scrollbar-width: none;
+}
+.oq-scroll::-webkit-scrollbar {
+	display: none;
+}
+
+/* Floating scrollbar, starting below the cover */
+.oq-scrollbar {
+	position: absolute;
+	right: 0;
+	z-index: 6;
+	width: 12px;
+	cursor: default;
+}
+.oq-thumb {
+	position: absolute;
+	top: 0;
+	right: 3px;
+	width: 4px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.28);
+	transition:
+		width 0.15s,
+		background 0.15s;
+}
+.oq-scrollbar:hover .oq-thumb,
+.oq-scrollbar.is-dragging .oq-thumb {
+	width: 7px;
+	background: rgba(255, 255, 255, 0.5);
 }
 
 /* Current song */

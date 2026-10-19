@@ -176,7 +176,11 @@ const createPanel = (unloads: LunaUnloads) => {
 	const empty = h("p", "oq-empty", "Nothing is up next. Songs you play or add to the queue show up here.");
 
 	scroll.append(hero, recent, queued.root, upNext.root, history.root, empty);
-	panel.append(ambient, scroll, mini);
+	// Own scrollbar: floats over the list (no layout jump when it appears/disappears) and never covers the big cover
+	const scrollbar = h("div", "oq-scrollbar");
+	const thumb = h("div", "oq-thumb");
+	scrollbar.appendChild(thumb);
+	panel.append(ambient, scroll, mini, scrollbar);
 	// #endregion
 
 	// #region Rendering
@@ -190,6 +194,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	};
 
 	const rows = new Map<string, Row>();
+	/** Songs being cleared, hidden until TIDAL has removed them */
+	const removing = new Set<string>();
 	const stripItems = new Map<string, HTMLButtonElement>();
 
 	const makeRow = (uid: string): Row => {
@@ -345,7 +351,14 @@ const createPanel = (unloads: LunaUnloads) => {
 			fillSection(history, nodes, played.map((p) => p.element.uid).join());
 			if (played.length === 0) history.list.replaceChildren(h("p", "oq-empty", "Songs you've played show up here."));
 		} else {
-			const upcoming = elements.slice(currentIndex + 1).map((element, offset) => ({ element, index: currentIndex + 1 + offset }));
+			const upcoming = elements
+				.slice(currentIndex + 1)
+				.map((element, offset) => ({ element, index: currentIndex + 1 + offset }))
+				.filter(({ element }) => !removing.has(element.uid));
+			if (removing.size > 0) {
+				const present = new Set(elements.map((element) => element.uid));
+				for (const uid of removing) if (!present.has(uid)) removing.delete(uid);
+			}
 			const fill = (section: Section, items: typeof upcoming) => {
 				section.root.hidden = items.length === 0;
 				const seconds = items.reduce((sum, { element }) => sum + (trackInfo(element.mediaItemId, onLoad)?.duration ?? 0), 0);
@@ -364,6 +377,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			empty.hidden = upcoming.length > 0;
 		}
 		for (const uid of rows.keys()) if (!used.has(uid)) rows.delete(uid);
+		updateScrollbar();
 	};
 
 	const renderProgress = () => {
@@ -425,6 +439,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			zIndex,
 		});
 		setOpen(true);
+		updateScrollbar();
 	};
 
 	// Follow TIDAL's own open/close animation for a moment
@@ -479,9 +494,12 @@ const createPanel = (unloads: LunaUnloads) => {
 			follow();
 		}
 		if (state.playQueue !== lastQueue || state.content.mediaItems !== lastItems) {
+			const queueChanged = state.playQueue !== lastQueue;
 			lastQueue = state.playQueue;
 			lastItems = state.content.mediaItems;
 			schedule();
+			// Not while TIDAL is still dispatching
+			if (queueChanged && refillGuard) setTimeout(removeRefills);
 		}
 	});
 
@@ -494,6 +512,61 @@ const createPanel = (unloads: LunaUnloads) => {
 	// #region Mini bar
 	const updateMini = () => mini.classList.toggle("is-shown", scroll.scrollTop > hero.offsetHeight - 72);
 	scroll.addEventListener("scroll", updateMini, { passive: true });
+	// #endregion
+
+	// #region Scrollbar
+	const MINI_HEIGHT = 56;
+	const MIN_THUMB = 28;
+	let track = { top: 0, height: 0, thumb: 0 };
+	function updateScrollbar() {
+		const { scrollTop, scrollHeight, clientHeight } = scroll;
+		const range = scrollHeight - clientHeight;
+		// Starts below the cover and moves up with it, but stays below the compact bar
+		const top = Math.max(MINI_HEIGHT, hero.offsetHeight - scrollTop);
+		const height = clientHeight - top;
+		scrollbar.hidden = range <= 1 || height < MIN_THUMB * 2;
+		if (scrollbar.hidden) return;
+		const thumbHeight = Math.max(MIN_THUMB, (height * clientHeight) / scrollHeight);
+		track = { top, height, thumb: thumbHeight };
+		scrollbar.style.top = `${top}px`;
+		scrollbar.style.height = `${height}px`;
+		thumb.style.height = `${thumbHeight}px`;
+		thumb.style.transform = `translateY(${(scrollTop / range) * (height - thumbHeight)}px)`;
+	}
+	scroll.addEventListener("scroll", updateScrollbar, { passive: true });
+	const contentObserver = new ResizeObserver(() => updateScrollbar());
+	contentObserver.observe(scroll);
+	for (const child of scroll.children) contentObserver.observe(child);
+
+	const scrollPerPixel = () => (scroll.scrollHeight - scroll.clientHeight) / Math.max(1, track.height - track.thumb);
+	thumb.addEventListener("pointerdown", (e) => {
+		if (e.button !== 0) return;
+		e.preventDefault();
+		e.stopPropagation();
+		thumb.setPointerCapture(e.pointerId);
+		const startY = e.clientY;
+		const startScroll = scroll.scrollTop;
+		const perPixel = scrollPerPixel();
+		scrollbar.classList.add("is-dragging");
+		const move = (ev: PointerEvent) => (scroll.scrollTop = startScroll + (ev.clientY - startY) * perPixel);
+		const end = () => {
+			scrollbar.classList.remove("is-dragging");
+			thumb.removeEventListener("pointermove", move);
+			thumb.removeEventListener("pointerup", end);
+			thumb.removeEventListener("pointercancel", end);
+		};
+		thumb.addEventListener("pointermove", move);
+		thumb.addEventListener("pointerup", end);
+		thumb.addEventListener("pointercancel", end);
+	});
+	// Clicking the track jumps there
+	scrollbar.addEventListener("pointerdown", (e) => {
+		if (e.button !== 0 || e.target === thumb) return;
+		e.preventDefault();
+		const y = e.clientY - scrollbar.getBoundingClientRect().top - track.thumb / 2;
+		scroll.scrollTo({ top: y * scrollPerPixel(), behavior: "smooth" });
+	});
+	scrollbar.addEventListener("wheel", (e) => (scroll.scrollTop += e.deltaY), { passive: true });
 	// #endregion
 
 	// #region Interaction
@@ -519,10 +592,152 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	};
 
-	const removeAll = (filter: (element: Element_) => boolean) => {
-		const { elements, currentIndex } = PlayState.playQueue;
-		for (const element of elements.slice(currentIndex + 1).filter(filter)) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
+	/**
+	 * Songs are removed one by one like the remove button (replacing the whole queue makes TIDAL stop the song),
+	 * a few at a time so TIDAL doesn't freeze on long queues. They disappear from the list right away.
+	 */
+	const removeUids = (uids: string[]) => {
+		const pending = uids.filter((uid) => !removing.has(uid));
+		if (pending.length === 0) return;
+		pending.forEach((uid) => removing.add(uid));
+		schedule();
+		const step = () => {
+			for (const uid of pending.splice(0, 20)) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid });
+			if (pending.length > 0) setTimeout(step, 16);
+		};
+		step();
 	};
+
+	/**
+	 * Removes upcoming songs only, history and the current song stay (TIDAL's own Clear drops the history too).
+	 * With `endSource`, TIDAL's later top-ups from the same playlist/album are removed too, so the queue really ends.
+	 */
+	const removeAll = (filter: (element: Element_) => boolean, endSource = false) => {
+		const { elements, currentIndex } = PlayState.playQueue;
+		const cleared = elements.slice(currentIndex + 1).filter(filter);
+		if (endSource && cleared.length > 0)
+			refillGuard = { contexts: new Set(cleared.map(contextKey)), known: new Set(elements.map((element) => element.uid)) };
+		removeUids(cleared.map((element) => element.uid));
+	};
+
+	/** TIDAL keeps topping up the queue from where it was playing from, even after it was cleared */
+	let refillGuard: { contexts: Set<string>; known: Set<string> } | undefined;
+	const contextKey = (element: Element_) => `${element.context?.type}:${element.context?.id ?? ""}`;
+	const isRefill = (guard: NonNullable<typeof refillGuard>, element: Element_) =>
+		!guard.known.has(element.uid) && element.priority === "priority_none" && guard.contexts.has(contextKey(element));
+	/** With repeat on, TIDAL starts over as usual */
+	const repeatOff = () => PlayState.repeatMode === PlayState.RepeatMode.Off;
+
+	const removeRefills = () => {
+		const guard = refillGuard;
+		if (guard === undefined || !repeatOff()) return;
+		const { elements, currentIndex } = PlayState.playQueue;
+		// TIDAL sometimes puts a song from the playlist straight into play when the queue runs out
+		const current = elements[currentIndex];
+		if (current && isRefill(guard, current)) return endQueue();
+		const refills = elements.slice(currentIndex + 1).filter((element) => isRefill(guard, element));
+		// Anything else that shows up (songs you add, a radio) stays
+		elements.forEach((element) => guard.known.add(element.uid));
+		if (refills.length > 0) removeUids(refills.map((element) => element.uid));
+	};
+	/** Nothing left to play after a Clear: what TIDAL would play next is a song from the cleared playlist */
+	const atEndOfClearedQueue = () => {
+		const guard = refillGuard;
+		if (guard === undefined || ending || !repeatOff()) return false;
+		const { elements, currentIndex } = PlayState.playQueue;
+		return elements.slice(currentIndex + 1).every((element) => removing.has(element.uid) || isRefill(guard, element));
+	};
+
+	/** The current song's track radio from TIDAL, if it has one */
+	const trackRadioId = (trackId: redux.ItemId) =>
+		new Promise<redux.ItemId | undefined>((resolve) => {
+			const stored = redux.store.getState().content.mediaItems[String(trackId)]?.item as { mixes?: Record<string, string> | null } | undefined;
+			const known = stored?.mixes?.TRACK_MIX;
+			if (known) return resolve(known);
+			let done = false;
+			const finish = (mixId: redux.ItemId | undefined) => {
+				if (done) return;
+				done = true;
+				unloadSuccess();
+				unloadFail();
+				clearTimeout(timeout);
+				resolve(mixId);
+			};
+			const unloadSuccess = redux.intercept("mix/LOAD_TRACK_MIX_ID_SUCCESS", unloads, (payload) => {
+				if (String(payload.trackId) === String(trackId)) finish(payload.mixId);
+			});
+			const unloadFail = redux.intercept("mix/LOAD_TRACK_MIX_ID_FAIL", unloads, (payload) => {
+				if (String(payload.trackId) === String(trackId)) finish(undefined);
+			});
+			const timeout = setTimeout(() => finish(undefined), 5000);
+			redux.actions["mix/LOAD_TRACK_MIX_ID"]({ id: trackId });
+		});
+
+	/** The radio's songs, loaded through TIDAL (playing a mix TIDAL hasn't loaded yet crashes its player) */
+	const radioTracks = (mixId: redux.ItemId) =>
+		new Promise<redux.ItemId[]>((resolve) => {
+			let done = false;
+			const finish = (ids: redux.ItemId[]) => {
+				if (done) return;
+				done = true;
+				unloadLoaded();
+				clearTimeout(timeout);
+				resolve(ids);
+			};
+			const unloadLoaded = redux.intercept("mix/LOAD_ALL_MIX_MEDIA_ITEMS_SUCCESS", unloads, (payload) => {
+				if (String(payload.mixId) !== String(mixId)) return;
+				finish(payload.mediaItems.filter((mediaItem) => mediaItem.type === "track").map((mediaItem) => mediaItem.item.id));
+			});
+			const timeout = setTimeout(() => finish([]), 6000);
+			redux.actions["mix/LOAD_TRACK_LIST_FOR_MIX_ID"]({ mixId, failSilently: true });
+		});
+
+	/** Like TIDAL's autoplay: the current song's radio, or stop if there is none (or autoplay is off) */
+	let ending = false;
+	const endQueue = async () => {
+		if (ending) return;
+		ending = true;
+		refillGuard = undefined;
+		try {
+			const { elements, currentIndex } = PlayState.playQueue;
+			const current = elements[currentIndex];
+			const autoPlay = redux.store.getState().settings?.autoPlay !== false;
+			const mixId = autoPlay && current ? await trackRadioId(current.mediaItemId) : undefined;
+			// The radio usually starts with the current song itself
+			const tracks = mixId !== undefined ? (await radioTracks(mixId)).filter((id) => String(id) !== String(current?.mediaItemId)) : [];
+			if (mixId !== undefined && tracks.length > 0) redux.actions["playQueue/ADD_NOW"]({ context: { type: "mix", id: mixId }, mediaItemIds: tracks, fromIndex: 0 });
+			else redux.actions["playbackControls/STOP"]();
+		} catch (err) {
+			trace.msg.err.withContext("Couldn't start the song's radio")(err as Error);
+			redux.actions["playbackControls/STOP"]();
+		} finally {
+			ending = false;
+		}
+	};
+
+	// Skipping or a song ending after a Clear: radio instead of TIDAL's pick from the cleared playlist
+	redux.intercept(["playQueue/MOVE_NEXT", "playbackControls/SKIP_NEXT"], unloads, () => {
+		if (!atEndOfClearedQueue()) return;
+		endQueue();
+		return true;
+	});
+
+	// Playing or queueing something yourself ends the guard
+	redux.intercept(
+		[
+			"playQueue/ADD_NOW",
+			"playQueue/ADD_TRACK_LIST_TO_PLAY_QUEUE",
+			"playQueue/ADD_NOW_REST_OF_TRACK_LIST",
+			"playQueue/ADD_NEXT",
+			"playQueue/ADD_LAST",
+			"playQueue/ADD_AT_INDEX",
+			"mix/PLAY_MIX",
+		],
+		unloads,
+		() => {
+			refillGuard = undefined;
+		},
+	);
 
 	const setMode = (next: Mode) => {
 		mode = next;
@@ -566,12 +781,8 @@ const createPanel = (unloads: LunaUnloads) => {
 					return setMode("next");
 				case "clear-queued":
 					return removeAll((element) => element.priority === "priority_keep");
-				case "clear-next": {
-					const clear = document.querySelector<HTMLElement>('#playQueueSidebar [data-test="playqueue-clear-playing-from"]');
-					if (clear) clear.click();
-					else removeAll((element) => element.priority !== "priority_keep");
-					return;
-				}
+				case "clear-next":
+					return removeAll((element) => element.priority !== "priority_keep", true);
 				case "play":
 					return play(Number(button.dataset.index));
 				case "remove": {
@@ -711,6 +922,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		unsubscribe();
 		settingsListeners.delete(applySettings);
 		resizeObserver.disconnect();
+		contentObserver.disconnect();
 		classObserver.disconnect();
 		window.removeEventListener("resize", place);
 		clearInterval(ticker);
