@@ -49,6 +49,8 @@ importers:
 
   plugins/Comité: {}
 
+  plugins/Office: {}
+
   plugins/SongDownloader:
     dependencies:
       flac-stream-tagger:
