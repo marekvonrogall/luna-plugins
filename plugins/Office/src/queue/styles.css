@@ -11,9 +11,9 @@
 	box-sizing: border-box;
 	overflow: hidden;
 	container-type: inline-size;
+	padding-top: var(--oq-head, 0px);
 	color: var(--oq-text);
 	background: var(--oq-base);
-	border-left: 1px solid rgba(255, 255, 255, 0.06);
 	font-family: inherit;
 	visibility: hidden;
 	opacity: 0;
@@ -55,13 +55,6 @@
 		opacity 0.2s ease,
 		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-/* Flies in with the queue */
-.oq-top {
-	transform: translateX(24px);
-}
-.oq-top.is-joined {
-	border-left-color: transparent;
-}
 .oq-search-block {
 	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 	transition-duration: 0.15s;
@@ -91,6 +84,16 @@
 }
 .oq-search-popover > *::-webkit-scrollbar {
 	display: none;
+}
+/* Full-screen view buttons (Similar tracks, Credits, Lyrics…): a bit tighter, so they fit above the queue */
+[data-test="new-now-playing"] > header > div[class^="_buttons"],
+[data-test="new-now-playing"] > header > div[class^="_buttons"] > * {
+	column-gap: 0.3em !important;
+	gap: 0.3em !important;
+}
+[data-test="new-now-playing"] > header > div[class^="_buttons"] button:not([class*="_iconOnly"]) {
+	padding-left: 0.85em !important;
+	padding-right: 0.85em !important;
 }
 /* The search field fills the widened search bar */
 #mainHeader [data-test="search-popover-container"] > [data-type="search-field"] {
@@ -146,10 +149,124 @@
 	outline-offset: 2px;
 }
 
+/* Top section, up to the title bar: part of the queue, flies in with it */
+.oq-cap {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 6;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: var(--oq-head, 0px);
+	overflow: hidden;
+	background: #18181b;
+	border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+.oq-panel.is-joined .oq-cap {
+	border-left-color: transparent;
+}
+/* The queue's left edge, below the top section */
+.oq-panel::after {
+	content: "";
+	position: absolute;
+	top: var(--oq-head, 0px);
+	bottom: 0;
+	left: 0;
+	z-index: 7;
+	width: 1px;
+	background: rgba(255, 255, 255, 0.06);
+	pointer-events: none;
+}
+/* Full-screen view buttons in the top section */
+.oq-cap-buttons {
+	display: none;
+	align-items: center;
+	gap: 0.3em;
+}
+.oq-cap.has-buttons .oq-cap-buttons {
+	display: flex;
+}
+.oq-cap-group {
+	display: flex;
+	align-items: center;
+	gap: 0.3em;
+}
+.oq-cap-btn {
+	height: 32px;
+	padding: 0 0.85em;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.7);
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background 0.15s,
+		color 0.15s;
+}
+.oq-cap-btn:hover {
+	color: #fff;
+}
+.oq-cap-btn.is-active {
+	background: #fff;
+	color: #000;
+}
+.oq-cap-buttons.is-loose,
+.oq-cap-buttons.is-loose .oq-cap-group {
+	gap: calc(0.45em + var(--oq-cap-extra, 0px));
+}
+.oq-cap-buttons.is-loose .oq-cap-btn:not(.oq-cap-btn--icon) {
+	padding: 0 0.95em;
+}
+.oq-cap-buttons.is-snug,
+.oq-cap-buttons.is-snug .oq-cap-group {
+	gap: calc(0.25em + var(--oq-cap-extra, 0px));
+}
+.oq-cap-buttons.is-snug .oq-cap-btn:not(.oq-cap-btn--icon) {
+	padding: 0 0.75em;
+}
+.oq-cap-buttons.is-tight,
+.oq-cap-buttons.is-tight .oq-cap-group {
+	gap: calc(0.1em + var(--oq-cap-extra, 0px));
+}
+.oq-cap-buttons.is-tight .oq-cap-btn:not(.oq-cap-btn--icon) {
+	padding: 0 0.6em;
+}
+.oq-cap-buttons.is-tighter .oq-cap-btn {
+	font-size: 12.5px;
+}
+.oq-cap-btn--icon {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	padding: 0;
+}
+.oq-cap-btn--icon:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+.oq-cap-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+	pointer-events: none;
+}
+/* TIDAL's own row when the queue covers it, and the greyed-out Lyrics button when a song has none */
+.oq-row-covered {
+	visibility: hidden !important;
+}
+.oq-lyrics-missing {
+	opacity: 0.35 !important;
+	pointer-events: none !important;
+}
+
 /* Cover colors bleeding through the whole panel */
 .oq-ambient {
 	position: absolute;
 	inset: 0;
+	top: var(--oq-head, 0px);
 	overflow: hidden;
 	pointer-events: none;
 }
@@ -363,7 +480,7 @@
 /* Compact bar once the current song is scrolled away */
 .oq-mini {
 	position: absolute;
-	top: 0;
+	top: var(--oq-head, 0px);
 	left: 0;
 	right: 0;
 	z-index: 5;
@@ -457,7 +574,7 @@
 	color: #fff;
 }
 
-/* Recently played: a strip of covers fading into the past */
+/* Recently played: a strip of covers */
 .oq-recent {
 	padding-top: 18px;
 }
@@ -467,8 +584,16 @@
 	overflow-x: auto;
 	padding: 2px 20px 8px;
 	scrollbar-width: none;
-	-webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
-	mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
+	--oq-fade-left: 0px;
+	--oq-fade-right: 0px;
+	-webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--oq-fade-left), #000 calc(100% - var(--oq-fade-right)), transparent);
+	mask-image: linear-gradient(90deg, transparent, #000 var(--oq-fade-left), #000 calc(100% - var(--oq-fade-right)), transparent);
+}
+.oq-strip.fade-left {
+	--oq-fade-left: 40px;
+}
+.oq-strip.fade-right {
+	--oq-fade-right: 40px;
 }
 .oq-strip::-webkit-scrollbar {
 	display: none;
@@ -484,16 +609,6 @@
 	border-radius: 6px;
 	background: rgba(255, 255, 255, 0.06);
 	cursor: pointer;
-	opacity: calc(1 - var(--oq-age, 0) * 0.05);
-	filter: saturate(calc(1 - var(--oq-age, 0) * 0.05));
-	transition:
-		opacity 0.15s,
-		filter 0.15s;
-}
-.oq-strip-item:hover,
-.oq-strip-item:focus-visible {
-	opacity: 1;
-	filter: none;
 }
 .oq-strip-item img {
 	display: block;
@@ -684,8 +799,7 @@
 	.oq-block.is-open {
 		transition: none;
 	}
-	.oq-panel,
-	.oq-top {
+	.oq-panel {
 		transform: none;
 	}
 }

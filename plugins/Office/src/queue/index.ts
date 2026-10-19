@@ -180,7 +180,12 @@ const createPanel = (unloads: LunaUnloads) => {
 	const scrollbar = h("div", "oq-scrollbar");
 	const thumb = h("div", "oq-thumb");
 	scrollbar.appendChild(thumb);
-	panel.append(ambient, scroll, mini, scrollbar);
+	// Top section of the queue, up to the title bar: behind TIDAL's header (search bar, profile picture), and in the
+	// full-screen view it shows that view's buttons (TIDAL's own are under the queue there)
+	const cap = h("div", "oq-cap");
+	const capButtons = h("div", "oq-cap-buttons");
+	cap.appendChild(capButtons);
+	panel.append(cap, ambient, scroll, mini, scrollbar);
 	// #endregion
 
 	// #region Rendering
@@ -294,7 +299,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (recent.hidden) return;
 		recentDetail.textContent = songCount(played.length);
 		const used = new Set<string>();
-		const nodes = played.slice(0, 30).map(({ element, index }, age) => {
+		const nodes = played.slice(0, 30).map(({ element, index }) => {
 			used.add(element.uid);
 			let item = stripItems.get(element.uid);
 			if (item === undefined) {
@@ -307,8 +312,6 @@ const createPanel = (unloads: LunaUnloads) => {
 				stripItems.set(element.uid, item);
 			}
 			item.dataset.index = String(index);
-			// Older songs fade out
-			item.style.setProperty("--oq-age", String(Math.min(age, 12)));
 			const info = trackInfo(element.mediaItemId, onLoad);
 			const label = info ? `${info.title} – ${artistNames(info)}` : "";
 			if (item.title !== label) {
@@ -325,6 +328,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (strip.dataset.order !== order) {
 			strip.dataset.order = order;
 			strip.replaceChildren(...nodes);
+			requestAnimationFrame(() => updateStripFades());
 		}
 	};
 
@@ -400,11 +404,10 @@ const createPanel = (unloads: LunaUnloads) => {
 	 * They sit right below whatever TIDAL keeps on top there, so the header (or the full-screen view's buttons) stays above them
 	 * and the page underneath stays below.
 	 */
-	const topBlock = h("div", "oq-block oq-top");
 	const searchBlock = h("div", "oq-block oq-search-block");
 	// Zero-size marker at 0,0 next to the blocks (they slide, so they can't measure themselves)
 	const blockProbe = h("i", "oq-probe");
-	for (const block of [topBlock, searchBlock, blockProbe]) block.setAttribute("aria-hidden", "true");
+	for (const block of [searchBlock, blockProbe]) block.setAttribute("aria-hidden", "true");
 
 	const lifted = new Map<HTMLElement, string>();
 	/** Positions a static element of TIDAL's so it paints above the blocks (doesn't change its layout) */
@@ -427,7 +430,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		);
 	};
 
-	type Anchor = { parent: Element; before: HTMLElement; zIndex: string };
+	type Anchor = { parent: Element; before: HTMLElement | null; zIndex: string };
 	/** Right below TIDAL's header (in the full-screen view it holds the Similar tracks/Credits/Lyrics buttons) */
 	const headerAnchor = (): Anchor | undefined => {
 		const header = document.getElementById("mainHeader");
@@ -451,25 +454,17 @@ const createPanel = (unloads: LunaUnloads) => {
 		node.style.zIndex = String(zIndex + 1);
 	};
 	const mountBlocks = ({ parent, before }: Anchor, zIndex: string) => {
-		if (
-			topBlock.parentElement !== parent ||
-			topBlock.nextElementSibling !== searchBlock ||
-			searchBlock.nextElementSibling !== blockProbe ||
-			blockProbe.nextElementSibling !== before
-		) {
-			parent.insertBefore(topBlock, before);
+		if (searchBlock.parentElement !== parent || searchBlock.nextElementSibling !== blockProbe || blockProbe.nextElementSibling !== before) {
 			parent.insertBefore(searchBlock, before);
 			parent.insertBefore(blockProbe, before);
 		}
-		topBlock.style.zIndex = searchBlock.style.zIndex = zIndex;
+		searchBlock.style.zIndex = zIndex;
 	};
 
-	/** TIDAL's full-screen view (song, lyrics, credits…) when it's showing */
+	/** TIDAL's full-screen view (song, lyrics, credits…) when it's showing. TIDAL has two elements with its id: the one on screen is the real view */
 	const fullscreenView = () => {
-		const nowPlaying = document.getElementById("nowPlaying");
-		if (!nowPlaying) return;
 		const probeAt = document.elementFromPoint(window.innerWidth * 0.2, window.innerHeight * 0.5);
-		return probeAt && nowPlaying.contains(probeAt) ? nowPlaying : undefined;
+		return probeAt?.closest<HTMLElement>('[data-test="new-now-playing"]') ?? undefined;
 	};
 	const titleBarBottom = () => {
 		const bar = document.querySelector<HTMLElement>('div[class^="_mainContainer"] > div[class^="_bar"]')?.getBoundingClientRect();
@@ -608,6 +603,134 @@ const createPanel = (unloads: LunaUnloads) => {
 		return list.getBoundingClientRect();
 	};
 
+	/**
+	 * The full-screen view's buttons (Similar tracks, Credits, Lyrics, full screen, close).
+	 * Queue open: copies in the queue's top section (TIDAL's own are under the queue), mirroring TIDAL's state and pressing
+	 * TIDAL's buttons. Queue closed: TIDAL's own, centered where the queue would be.
+	 * A song without lyrics gets a greyed-out Lyrics button instead of none, so the row keeps its layout.
+	 */
+	const HEAD_BUTTONS = [
+		{ test: "toggle-similar-tracks", label: "Similar tracks" },
+		{ test: "toggle-credits", label: "Credits" },
+		{ test: "toggle-lyrics", label: "Lyrics" },
+		{ test: "new-now-playing-expand", label: "Full screen", icon: "player__maximize", viewBox: "0 0 24 24" },
+		{ test: "new-now-playing-close", label: "Close", icon: "general__arrow-down", viewBox: "0 0 16 16" },
+	] as const;
+	const proxies = new Map<string, HTMLButtonElement>();
+	const contentGroup = h("div", "oq-cap-group");
+	const actionGroup = h("div", "oq-cap-group");
+	for (const def of HEAD_BUTTONS) {
+		const button = h("button", "icon" in def ? "oq-cap-btn oq-cap-btn--icon" : "oq-cap-btn");
+		button.type = "button";
+		button.dataset.action = "proxy";
+		button.dataset.proxy = def.test;
+		if ("icon" in def) {
+			button.setAttribute("aria-label", def.label);
+			button.title = def.label;
+			button.innerHTML = `<svg viewBox="${def.viewBox}" width="20" height="20" fill="currentColor" aria-hidden="true"><use href="#${def.icon}"></use></svg>`;
+			actionGroup.appendChild(button);
+		} else {
+			button.textContent = def.label;
+			contentGroup.appendChild(button);
+		}
+		proxies.set(def.test, button);
+	}
+	capButtons.append(contentGroup, actionGroup);
+
+	let mirroredView: HTMLElement | undefined;
+	const tidalButton = (test: string) => mirroredView?.querySelector<HTMLElement>(`:scope > header [data-test="${test}"]`) ?? null;
+	const updateProxies = () => {
+		for (const { test } of HEAD_BUTTONS) {
+			const proxy = proxies.get(test)!;
+			const tidal = tidalButton(test);
+			proxy.disabled = tidal === null;
+			proxy.classList.toggle("is-active", tidal?.getAttribute("aria-pressed") === "true");
+			// TIDAL's wording (language)
+			const text = tidal?.textContent?.trim();
+			if (text && !proxy.classList.contains("oq-cap-btn--icon") && proxy.textContent !== text) proxy.textContent = text;
+		}
+	};
+	const pressTidalButton = (test: string) => tidalButton(test)?.click();
+
+	/** Queue closed: a greyed-out Lyrics button in TIDAL's own row when the song has no lyrics */
+	const placeholderOf = (row: Element) => row.querySelector<HTMLElement>(":scope .oq-lyrics-missing");
+	const syncLyricsPlaceholder = (view: HTMLElement | undefined) => {
+		const group = view?.querySelector<HTMLElement>(':scope > header div[class^="_contentButtons"]');
+		document.querySelectorAll(".oq-lyrics-missing").forEach((node) => node.parentElement !== group && node.remove());
+		if (!group) return;
+		const lyrics = group.querySelector('[data-test="toggle-lyrics"]');
+		const placeholder = placeholderOf(group);
+		if (lyrics) return placeholder?.remove();
+		if (placeholder) return;
+		const credits = group.querySelector<HTMLElement>('[data-test="toggle-credits"]');
+		if (!credits) return;
+		const copy = credits.cloneNode(true) as HTMLElement;
+		copy.removeAttribute("data-test");
+		copy.removeAttribute("aria-pressed");
+		copy.setAttribute("aria-disabled", "true");
+		copy.tabIndex = -1;
+		copy.classList.add("oq-lyrics-missing");
+		for (const name of [...copy.classList]) if (name.startsWith("_toggleButtonActive")) copy.classList.remove(name);
+		const label = copy.querySelector("span") ?? copy;
+		label.textContent = "Lyrics";
+		group.appendChild(copy);
+	};
+
+	// TIDAL changes the row on song changes and toggles: mirror and re-apply right away
+	const headerObserver = new MutationObserver(() => {
+		updateProxies();
+		syncLyricsPlaceholder(mirroredView);
+		requestAnimationFrame(place);
+	});
+	unloads.add(() => headerObserver.disconnect());
+
+	let centeredButtons: HTMLElement | undefined;
+	let centeredShift = 0;
+	const uncenterButtons = () => {
+		centeredButtons?.style.removeProperty("transform");
+		centeredButtons?.classList.remove("oq-row-covered");
+		centeredButtons = undefined;
+		centeredShift = 0;
+	};
+	const layoutFullscreenButtons = (view: HTMLElement | undefined, queueOpen: boolean, columnLeft: number, columnWidth: number) => {
+		if (view !== mirroredView) {
+			headerObserver.disconnect();
+			mirroredView = view;
+			const header = view?.querySelector(":scope > header");
+			if (header) headerObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-pressed", "class"] });
+		}
+		cap.classList.toggle("has-buttons", view !== undefined && queueOpen);
+		if (view && queueOpen) {
+			updateProxies();
+			// As roomy as fits the queue's width (with the same space left and right)
+			const levels = ["is-loose", "is-snug", "is-tight", "is-tighter"];
+			const margin = 12;
+			capButtons.classList.remove(...levels);
+			capButtons.style.removeProperty("--oq-cap-extra");
+			for (const level of levels) {
+				capButtons.classList.add(level);
+				if (cap.clientWidth - capButtons.scrollWidth >= margin * 2) break;
+				if (level !== "is-tighter" && level !== "is-tight") capButtons.classList.remove(level);
+			}
+			// Whatever room is left goes into the 4 gaps between the buttons, in whole pixels
+			const extra = Math.floor((cap.clientWidth - capButtons.scrollWidth - margin * 2) / 4);
+			if (extra > 0) capButtons.style.setProperty("--oq-cap-extra", `${Math.min(extra, 8)}px`);
+		}
+		syncLyricsPlaceholder(view);
+
+		const row = view?.querySelector<HTMLElement>(':scope > header > div[class^="_buttons"]');
+		if (row !== centeredButtons) uncenterButtons();
+		if (!row) return;
+		centeredButtons = row;
+		// Under the queue anyway, the copies in the queue take over
+		row.classList.toggle("oq-row-covered", queueOpen);
+		const rect = row.getBoundingClientRect();
+		// Where TIDAL put it, without our shift
+		const left = rect.left - centeredShift;
+		centeredShift = Math.round(columnLeft + (columnWidth - rect.width) / 2 - left);
+		row.style.transform = `translateX(${centeredShift}px)`;
+	};
+
 	// Remembered for when the queue is closed
 	let queueWidth = 0;
 	let queueTop = 0;
@@ -628,16 +751,14 @@ const createPanel = (unloads: LunaUnloads) => {
 		const queueLeft = clientWidth - width;
 		const fullscreen = fullscreenView();
 		const anchor = headerAnchor();
-		if (anchor) {
+		if (anchor && anchor.before) {
 			const queueLayer = parseInt(panel.style.zIndex);
 			if (!Number.isNaN(queueLayer)) raiseAbove(anchor.before, queueLayer);
 			mountBlocks(anchor, Number.isNaN(queueLayer) ? anchor.zIndex : String(queueLayer));
 		}
 		const origin = blockProbe.getBoundingClientRect();
 
-		const showTop = anchor !== undefined && queueRect !== undefined && queueRect.top - top >= 1;
-		if (showTop) setBox(topBlock, queueRect.left, top, width, queueRect.top - top, origin);
-		topBlock.classList.toggle("is-open", showTop);
+		layoutFullscreenButtons(fullscreen, queueRect !== undefined, queueLeft, width);
 
 		// Searching: a block left of the queue (or where the queue would be), down to the end of the big cover
 		const popover = fullscreen ? null : document.querySelector<HTMLElement>(POPOVER);
@@ -645,8 +766,8 @@ const createPanel = (unloads: LunaUnloads) => {
 		const searchLeft = searching && queueRect ? queueLeft - width : queueLeft;
 		const bottom = heroBottom || top + 58 + Math.min(width, window.innerHeight * 0.46);
 		searchBlock.classList.toggle("is-open", searching);
-		// One surface with the block above the queue, no line between them
-		topBlock.classList.toggle("is-joined", searching && queueRect !== undefined);
+		// One surface with the queue's top section, no line between them
+		panel.classList.toggle("is-joined", searching && queueRect !== undefined);
 
 		if (!fullscreen) fitSearch(searchLeft);
 		// Exactly the search block, TIDAL's content fills it (and leaves room for the search bar itself)
@@ -685,26 +806,49 @@ const createPanel = (unloads: LunaUnloads) => {
 			placeFailed = true;
 		}
 	};
+	/**
+	 * Where an element sits in the layout, ignoring transforms: TIDAL animates its queue when it opens/closes,
+	 * and following that frame by frame made the blocks jump around
+	 */
+	const layoutRect = (node: HTMLElement) => {
+		let x = 0;
+		let y = 0;
+		for (let el: HTMLElement | null = node; el; el = el.offsetParent as HTMLElement | null) {
+			x += el.offsetLeft;
+			y += el.offsetTop;
+			if (getComputedStyle(el).position === "fixed") break;
+		}
+		for (let el = node.parentElement; el && el !== document.body; el = el.parentElement) {
+			x -= el.scrollLeft;
+			y -= el.scrollTop;
+		}
+		return new DOMRect(x, y, node.offsetWidth, node.offsetHeight);
+	};
+
 	/** Returns where the queue is, if it's open */
 	const placeQueue = (): DOMRect | undefined => {
 		const aside = tidalAside();
 		const wrapper = aside?.parentElement;
 		if (!aside || !wrapper || !isTidalQueueOpen(aside)) return void setOpen(false);
 		if (panel.previousElementSibling !== wrapper || probe.previousElementSibling !== panel) wrapper.after(panel, probe);
-		const rect = aside.getBoundingClientRect();
+		const rect = layoutRect(aside);
 		if (rect.width < 40 || rect.height < 40) return void setOpen(false);
 		const footer = document.getElementById("footerPlayer")?.getBoundingClientRect();
 		const bottom = footer && footer.height > 0 ? footer.top : window.innerHeight;
 		const origin = probe.getBoundingClientRect();
 		const width = document.documentElement.clientWidth - rect.left;
 		const zIndex = [wrapper, aside].map((node) => getComputedStyle(node).zIndex).find((z) => z !== "auto") ?? "";
+		// The top section runs from the title bar down to where TIDAL's queue starts
+		const titleBar = titleBarBottom();
+		const top = rect.top - titleBar >= 1 ? titleBar : rect.top;
 		Object.assign(panel.style, {
 			left: `${rect.left - origin.left}px`,
-			top: `${rect.top - origin.top}px`,
+			top: `${top - origin.top}px`,
 			width: `${width}px`,
-			height: `${Math.max(0, bottom - rect.top)}px`,
+			height: `${Math.max(0, bottom - top)}px`,
 			zIndex,
 		});
+		panel.style.setProperty("--oq-head", `${rect.top - top}px`);
 		setOpen(true);
 		updateScrollbar();
 		return rect;
@@ -745,7 +889,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	window.addEventListener("resize", place);
 	// Search results opening/closing, the full-screen view opening/closing
 	observe(unloads, POPOVER, () => follow());
-	observe(unloads, "#nowPlaying", () => follow());
+	// Only when the full-screen view's header appears, not on every lyrics change inside it
+	observe(unloads, '[data-test="new-now-playing"] > header', () => follow());
 	const onFocusChange = () => follow();
 	document.addEventListener("focusin", onFocusChange);
 	document.addEventListener("focusout", onFocusChange);
@@ -795,9 +940,10 @@ const createPanel = (unloads: LunaUnloads) => {
 	function updateScrollbar() {
 		const { scrollTop, scrollHeight, clientHeight } = scroll;
 		const range = scrollHeight - clientHeight;
-		// Starts below the cover and moves up with it, but stays below the compact bar
-		const top = Math.max(MINI_HEIGHT, hero.offsetHeight - scrollTop);
-		const height = clientHeight - top;
+		// Starts below the cover and moves up with it, but stays below the compact bar (and the top section)
+		const head = scroll.offsetTop;
+		const top = head + Math.max(MINI_HEIGHT, hero.offsetHeight - scrollTop);
+		const height = head + clientHeight - top;
 		scrollbar.hidden = range <= 1 || height < MIN_THUMB * 2;
 		if (scrollbar.hidden) return;
 		const thumbHeight = Math.max(MIN_THUMB, (height * clientHeight) / scrollHeight);
@@ -1034,6 +1180,8 @@ const createPanel = (unloads: LunaUnloads) => {
 		const row = rowOf(target);
 		if (button) {
 			switch (button.dataset.action) {
+				case "proxy":
+					return pressTidalButton(button.dataset.proxy ?? "");
 				case "close": {
 					// TIDAL's own close button, the store action doesn't close it in every TIDAL version
 					const close = document.querySelector<HTMLElement>('#playQueueSidebar [data-test="playqueue-close-button"]');
@@ -1101,6 +1249,15 @@ const createPanel = (unloads: LunaUnloads) => {
 			openMenu(row, rect.right - 40, rect.bottom);
 		}
 	});
+
+	// Fades on the side(s) with more covers
+	const updateStripFades = () => {
+		const max = strip.scrollWidth - strip.clientWidth;
+		strip.classList.toggle("fade-left", strip.scrollLeft > 1);
+		strip.classList.toggle("fade-right", strip.scrollLeft < max - 1);
+	};
+	strip.addEventListener("scroll", updateStripFades, { passive: true });
+	new ResizeObserver(updateStripFades).observe(strip);
 
 	// Vertical scrolling over the recently played strip scrolls it sideways
 	strip.addEventListener(
@@ -1179,10 +1336,10 @@ const createPanel = (unloads: LunaUnloads) => {
 		setTimeout(() => (suppressClick = false));
 		if (cancelled || !target) return;
 		const currentIndex = PlayState.playQueue.currentIndex;
-		let to = Number(target.dataset.index) + (after ? 1 : 0);
-		if (from < to) to -= 1;
-		to = Math.max(to, currentIndex + 1);
-		if (to !== from) redux.actions["playQueue/MOVE_TRACK"]({ fromIndex: from, toIndex: to });
+		// TIDAL inserts before `toIndex`, counted before the song is taken out
+		const to = Math.max(Number(target.dataset.index) + (after ? 1 : 0), currentIndex + 1);
+		// Dropped right above or below itself: nothing moves
+		if (to !== from && to !== from + 1) redux.actions["playQueue/MOVE_TRACK"]({ fromIndex: from, toIndex: to });
 	};
 	panel.addEventListener("pointerup", (e) => endDrag(e, false));
 	panel.addEventListener("pointercancel", (e) => endDrag(e, true));
@@ -1207,11 +1364,12 @@ const createPanel = (unloads: LunaUnloads) => {
 		cancelAnimationFrame(autoScroll);
 		panel.remove();
 		probe.remove();
-		topBlock.remove();
 		searchBlock.remove();
 		blockProbe.remove();
 		unfitSearch();
 		unstylePopover();
+		uncenterButtons();
+		syncLyricsPlaceholder(undefined);
 		for (const [node, position] of lifted) node.style.position = position;
 		for (const [node, zIndex] of raised) node.style.zIndex = zIndex;
 	};
