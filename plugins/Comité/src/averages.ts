@@ -103,7 +103,7 @@ export const artistCatalogShareIfLoaded = (artistId: string): CatalogShare | und
 	return catalog?.albumIds === undefined || catalog.total === undefined ? undefined : catalogShare(catalog.albumIds, catalog.total);
 };
 
-/** Songs on the artist's own albums, EPs and singles that are rated (artist pages only: costs 2 requests the first time) */
+/** Songs on the artist's own albums, EPs and singles that are rated (2 requests the first time per artist) */
 export const artistCatalogShare = async (artistId: string): Promise<CatalogShare | undefined> => {
 	let catalog = catalogs.get(artistId);
 	if (catalog === undefined) {
