@@ -2,6 +2,8 @@ import type { LunaUnloads } from "@luna/core";
 
 import { isSaving, rateTrack, ratingListeners, shownRating } from "./ratings";
 import { createStarRow, type StarRow } from "./starRow";
+import { resolveRowId } from "./staleIds";
+import { canonicalId } from "./store";
 
 const CELL = "comite-rating-cell";
 const HEADER = "comite-rating-header";
@@ -169,9 +171,10 @@ const createTableHeader = (headerRow: HTMLTableRowElement) => {
 const syncTables = () => {
 	const changed = new Set<HTMLTableElement>();
 	for (const row of document.querySelectorAll<HTMLElement>(TABLE_ROW_SELECTOR)) {
-		const trackId = tableTrackId(row);
+		const rowTrackId = tableTrackId(row);
 		const table = row.closest("table");
-		if (trackId === undefined || table === null) continue;
+		if (rowTrackId === undefined || table === null) continue;
+		const trackId = canonicalId(rowTrackId);
 		let cell = row.querySelector<HTMLElement>(`:scope > .${CELL}`);
 		if (cell === null) {
 			cell = createCell("td");
@@ -198,6 +201,14 @@ const syncTables = () => {
 	}
 };
 
+let syncFrame = 0;
+const scheduleSync = () => {
+	syncFrame ||= requestAnimationFrame(() => {
+		syncFrame = 0;
+		sync();
+	});
+};
+
 /** Adds missing cells and updates rows the virtual list reused for another song */
 const sync = () => {
 	syncTables();
@@ -211,12 +222,13 @@ const sync = () => {
 		added = true;
 	}
 	for (const row of document.querySelectorAll<HTMLElement>(ROW_SELECTOR)) {
-		const trackId = row.dataset.trackId;
+		const rowTrackId = row.dataset.trackId;
 		let cell = row.querySelector<HTMLElement>(`:scope > .${CELL}`);
-		if (!trackId) {
+		if (!rowTrackId) {
 			cell?.remove();
 			continue;
 		}
+		const trackId = resolveRowId(row, rowTrackId, scheduleSync);
 		if (cell === null) {
 			cell = createCell();
 			// Last known decision for now; measured once below
@@ -290,6 +302,7 @@ export const setupRatingColumn = (unloads: LunaUnloads) => {
 		tables.clear();
 		cancelAnimationFrame(tableFrame);
 		cancelAnimationFrame(frame);
+		cancelAnimationFrame(syncFrame);
 		cancelAnimationFrame(resizeFrame);
 		ratingListeners.delete(repaint);
 		document.querySelectorAll(`.${CELL}, .${HEADER}`).forEach((element) => element.remove());

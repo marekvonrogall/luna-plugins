@@ -10,10 +10,12 @@ type Store = {
 	rateStartAt: number;
 	/** Rating mode as a higher / lower game against songs you already rated */
 	rateGame: boolean;
+	/** Replaced track id → current id */
+	aliases: Record<string, string>;
 };
 
 /** One playlist per rating, kept until changed in the plugin settings */
-export const settings = await ReactiveStore.getPluginStorage<Store>("Comité", { playlists: {}, rateShuffle: true, rateStartAt: 0, rateGame: false });
+export const settings = await ReactiveStore.getPluginStorage<Store>("Comité", { playlists: {}, rateShuffle: true, rateStartAt: 0, rateGame: false, aliases: {} });
 
 /** Half-star steps from 0.5 to 5 */
 export const RATINGS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;
@@ -33,6 +35,39 @@ const plainPlaylists = () => {
 		if (value?.uuid) result[key] = { uuid: String(value.uuid), title: String(value.title) };
 	}
 	return result;
+};
+
+/** The song's current id */
+export const canonicalId = (trackId: string) => {
+	let id = trackId;
+	for (let step = 0; step < 5; step++) {
+		const next = settings.aliases?.[id];
+		if (next === undefined || next === id) break;
+		id = String(next);
+	}
+	return id;
+};
+
+/** The song's current id and all its old ones */
+export const idsOfSong = (trackId: string) => {
+	const id = canonicalId(trackId);
+	const ids = new Set([id, trackId]);
+	for (const [old, current] of Object.entries(settings.aliases ?? {})) if (canonicalId(String(current)) === id) ids.add(old);
+	return [...ids];
+};
+
+const MAX_ALIASES = 5000;
+
+/** Links `oldId` to `newId`; false if already linked */
+export const linkTrackIds = (oldId: string, newId: string) => {
+	if (oldId === newId || canonicalId(oldId) === canonicalId(newId)) return false;
+	const aliases: Record<string, string> = {};
+	for (const [key, value] of Object.entries(settings.aliases ?? {})) aliases[key] = String(value);
+	aliases[oldId] = newId;
+	const keys = Object.keys(aliases);
+	for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ALIASES))) delete aliases[key];
+	settings.aliases = aliases;
+	return true;
 };
 
 export const setRatingPlaylist = (rating: number, playlist: RatingPlaylist | undefined) => {

@@ -168,7 +168,14 @@ export const getPlaylistInfo = async (uuid: string): Promise<{ title: string } |
 	return { title: playlist.title };
 };
 
-/** Track ids in a playlist (fresh) */
+/** false if TIDAL no longer knows the id (404), undefined if unsure */
+export const trackExists = async (trackId: string): Promise<boolean | undefined> => {
+	const res = await request(withQuery(`tracks/${trackId}`));
+	if (res.ok) return true;
+	if (res.status === 404) return false;
+	return undefined;
+};
+
 const getEtag = async (uuid: string) => {
 	const res = await request(withQuery(`playlists/${uuid}`));
 	if (!res.ok) throw failed("Failed to load playlist", res);
@@ -185,22 +192,31 @@ const modify = async (uuid: string, what: string, send: (etag: string) => Promis
 		if (res.status !== 412) break;
 	}
 	if (!res?.ok) throw failed(what, res!);
+	return res;
 };
 
-/** Adds a track, TIDAL skips it if it's already in the playlist */
-export const addTrack = (uuid: string, trackId: string) =>
-	modify(uuid, "Failed to add the song", (etag) =>
+/** Adds a track (skipped if already there); returns the ids TIDAL added, which for an old id is the current one */
+export const addTrack = async (uuid: string, trackId: string): Promise<string[] | undefined> => {
+	const res = await modify(uuid, "Failed to add the song", (etag) =>
 		request(withQuery(`playlists/${uuid}/items`), {
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded", "If-None-Match": etag },
 			body: `trackIds=${trackId}&onDupes=SKIP&onArtifactNotFound=SKIP`,
 		}),
 	);
+	try {
+		const body = (await res.json()) as { addedItemIds?: (string | number)[] };
+		return Array.isArray(body?.addedItemIds) ? body.addedItemIds.map(String) : undefined;
+	} catch {
+		return undefined;
+	}
+};
 
-/** Removes every occurrence of a track (looked up fresh, positions change when the playlist is edited) */
-export const removeTrack = async (uuid: string, trackId: string) => {
+/** Removes every occurrence of any of the ids (looked up fresh, positions change on edits) */
+export const removeTrack = async (uuid: string, trackIds: string[]) => {
+	const ids = new Set(trackIds);
 	const items = await fetchPlaylistItems(uuid);
-	const indices = items.flatMap((item, index) => (String(item.item.id) === trackId ? [index] : []));
+	const indices = items.flatMap((item, index) => (ids.has(String(item.item.id)) ? [index] : []));
 	if (indices.length === 0) return;
 	await modify(uuid, "Failed to remove the song", (etag) =>
 		request(withQuery(`playlists/${uuid}/items/${indices.join(",")}`), { method: "DELETE", headers: { "If-None-Match": etag } }),

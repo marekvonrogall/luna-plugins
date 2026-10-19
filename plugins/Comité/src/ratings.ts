@@ -4,7 +4,7 @@ import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { addTrack, getPlaylistInfo, getUserPlaylists, refreshPlaylistView, removeTrack, waitForLogin } from "./api";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
-import { getRatingPlaylist, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
+import { canonicalId, getRatingPlaylist, idsOfSong, linkTrackIds, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
 
 /** Track ids per rating, read from the rating playlists */
 const cache = new Map<number, Set<string>>();
@@ -57,11 +57,12 @@ const rememberTrack = (item: redux.MediaItem["item"] | undefined) => {
 		title: displayTitle(item.title ?? "", version),
 	});
 };
-export const getTrackMeta = (trackId: string) => trackMeta.get(trackId);
+export const getTrackMeta = (trackId: string) => trackMeta.get(canonicalId(trackId)) ?? trackMeta.get(trackId);
 
 /** Rated songs (other than `trackId`) with the same name and at least one shared artist, e.g. a single re-released on an album */
 export const sameSongRatings = (trackId: string, key: string, artistIds: string[]) => {
 	const artists = new Set(artistIds);
+	trackId = canonicalId(trackId);
 	const matches: { trackId: string; rating: number; albumTitle?: string; title: string }[] = [];
 	if (key === "") return matches;
 	for (const [id, rating] of ratedTracks()) {
@@ -147,9 +148,10 @@ export const refreshRatingsIfStale = () => {
 	if (Date.now() - loadedAt > MAX_AGE) refreshRatings();
 };
 
-/** Highest rating whose playlist contains the track, 0 if none */
+/** Highest rating whose playlist contains the song, 0 if none */
 export const ratingOf = (trackId: string) => {
-	for (const rating of [...RATINGS].reverse()) if (cache.get(rating)?.has(trackId)) return rating;
+	const id = canonicalId(trackId);
+	for (const rating of [...RATINGS].reverse()) if (cache.get(rating)?.has(id)) return rating;
 	return 0;
 };
 
@@ -174,23 +176,34 @@ export const validateRatingPlaylists = async () => {
 	}
 };
 
-/** Puts the track into the playlist of `rating` and removes it from the other rating playlists (0 = unrated) */
+/** Puts the song into the playlist of `rating` and removes it from the other rating playlists (0 = unrated) */
 export const applyRating = async (trackId: string, rating: number) => {
+	let id = canonicalId(trackId);
 	const target = rating === 0 ? undefined : getRatingPlaylist(rating);
-	if (!trackMeta.has(trackId)) rememberTrack(redux.store.getState().content.mediaItems[trackId]?.item);
+	if (!trackMeta.has(id)) rememberTrack(redux.store.getState().content.mediaItems[id]?.item ?? redux.store.getState().content.mediaItems[trackId]?.item);
 	if (target !== undefined) {
-		await addTrack(target.uuid, trackId);
+		const added = await addTrack(target.uuid, id);
+		// TIDAL stored the current id instead of an old one
+		if (added?.length === 1 && added[0] !== id) {
+			trace.log(`Song ${id} is stored as ${added[0]}`);
+			linkTrackIds(id, added[0]);
+			const meta = trackMeta.get(id);
+			if (meta !== undefined) trackMeta.set(added[0], meta);
+			id = added[0];
+		}
 		if (!cache.has(rating)) cache.set(rating, new Set());
-		cache.get(rating)!.add(trackId);
+		cache.get(rating)!.add(id);
 		refreshPlaylistView(target.uuid);
 	}
+	const ids = idsOfSong(id);
 	for (const other of RATINGS) {
-		if (other === rating || !cache.get(other)?.has(trackId)) continue;
+		const cached = cache.get(other);
+		if (other === rating || !ids.some((each) => cached?.has(each))) continue;
 		const playlist = getRatingPlaylist(other);
 		// Same playlist used for two ratings: don't remove what was just added
 		if (playlist === undefined || playlist.uuid === target?.uuid) continue;
-		await removeTrack(playlist.uuid, trackId);
-		cache.get(other)!.delete(trackId);
+		await removeTrack(playlist.uuid, ids);
+		for (const each of ids) cached!.delete(each);
 		refreshPlaylistView(playlist.uuid);
 	}
 	notify();
@@ -201,11 +214,12 @@ const pending = new Map<string, number>();
 let picking = false;
 
 /** The rating to show for a song: the one being saved, else the stored one */
-export const shownRating = (trackId: string) => pending.get(trackId) ?? ratingOf(trackId);
-export const isSaving = (trackId: string) => pending.has(trackId);
+export const shownRating = (trackId: string) => pending.get(canonicalId(trackId)) ?? ratingOf(trackId);
+export const isSaving = (trackId: string) => pending.has(canonicalId(trackId));
 
 /** Rates a song from a star row; clicking its current rating again removes it. A rating's first use asks for its playlist. */
-export const rateTrack = async (trackId: string, clicked: number) => {
+export const rateTrack = async (rowTrackId: string, clicked: number) => {
+	const trackId = canonicalId(rowTrackId);
 	if (pending.has(trackId) || picking) return;
 	const next = ratingOf(trackId) === clicked ? 0 : clicked;
 	pending.set(trackId, next);
