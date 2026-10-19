@@ -33,6 +33,87 @@
 		opacity 0.2s ease,
 		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* Blocks behind TIDAL's header, above the queue and for search results */
+.oq-block {
+	position: fixed;
+	box-sizing: border-box;
+	background: #18181b;
+	border-left: 1px solid rgba(255, 255, 255, 0.06);
+	pointer-events: none;
+	visibility: hidden;
+	opacity: 0;
+	transition:
+		opacity 0.2s ease,
+		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+		visibility 0s linear 0.28s;
+}
+.oq-block.is-open {
+	visibility: visible;
+	opacity: 1;
+	transform: none;
+	transition:
+		opacity 0.2s ease,
+		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Flies in with the queue */
+.oq-top {
+	transform: translateX(24px);
+}
+.oq-top.is-joined {
+	border-left-color: transparent;
+}
+.oq-search-block {
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	transition-duration: 0.15s;
+}
+/* TIDAL's search results: the box is the search block, only TIDAL's own list inside scrolls */
+.oq-search-popover {
+	position: fixed !important;
+	right: auto !important;
+	bottom: auto !important;
+	box-sizing: border-box !important;
+	display: block !important;
+	max-height: none !important;
+	min-height: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	overflow: hidden !important;
+	transform: none !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	/* Clicks pass through where the search bar sits, only the list below it takes them */
+	pointer-events: none !important;
+	-webkit-app-region: no-drag !important;
+	/* Above TIDAL's invisible click-anywhere-to-close layer */
+	z-index: 1000 !important;
+}
+.oq-search-popover > *::-webkit-scrollbar {
+	display: none;
+}
+/* The search field fills the widened search bar */
+#mainHeader [data-test="search-popover-container"] > [data-type="search-field"] {
+	flex: 1 1 auto;
+	min-width: 0;
+	pointer-events: auto;
+}
+/* TIDAL's own box inside: no gap above it, no rounded corners */
+.oq-search-popover > * {
+	pointer-events: auto !important;
+	box-sizing: border-box !important;
+	min-height: 0 !important;
+	/* Fills the block and scrolls (without a scrollbar running behind the search bar) */
+	overflow-x: hidden !important;
+	overflow-y: auto !important;
+	scrollbar-width: none !important;
+	margin-top: 0 !important;
+	padding-top: 0 !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+}
 .oq-panel *,
 .oq-panel *::before,
 .oq-panel *::after {
@@ -598,10 +679,13 @@
 	.oq-panel.is-open,
 	.oq-mini,
 	.oq-hero-covers img,
-	.oq-ambient img {
+	.oq-ambient img,
+	.oq-block,
+	.oq-block.is-open {
 		transition: none;
 	}
-	.oq-panel {
+	.oq-panel,
+	.oq-top {
 		transform: none;
 	}
 }

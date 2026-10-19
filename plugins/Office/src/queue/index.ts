@@ -395,6 +395,272 @@ const createPanel = (unloads: LunaUnloads) => {
 	// #endregion
 
 	// #region Placement
+	/**
+	 * Dark blocks behind TIDAL's header: one above the queue (so it seems to run up to the title bar) and one for search results.
+	 * They sit right below whatever TIDAL keeps on top there, so the header (or the full-screen view's buttons) stays above them
+	 * and the page underneath stays below.
+	 */
+	const topBlock = h("div", "oq-block oq-top");
+	const searchBlock = h("div", "oq-block oq-search-block");
+	// Zero-size marker at 0,0 next to the blocks (they slide, so they can't measure themselves)
+	const blockProbe = h("i", "oq-probe");
+	for (const block of [topBlock, searchBlock, blockProbe]) block.setAttribute("aria-hidden", "true");
+
+	const lifted = new Map<HTMLElement, string>();
+	/** Positions a static element of TIDAL's so it paints above the blocks (doesn't change its layout) */
+	const lift = (node: HTMLElement | null) => {
+		if (!node || lifted.has(node) || node.classList.contains("oq-block") || getComputedStyle(node).position !== "static") return;
+		lifted.set(node, node.style.position);
+		node.style.position = "relative";
+	};
+	const formsStackingContext = (node: Element) => {
+		const style = getComputedStyle(node);
+		return (
+			(style.position !== "static" && style.zIndex !== "auto") ||
+			style.position === "fixed" ||
+			style.position === "sticky" ||
+			Number(style.opacity) < 1 ||
+			style.transform !== "none" ||
+			style.filter !== "none" ||
+			style.isolation === "isolate" ||
+			/paint|layout|strict|content/.test(style.contain)
+		);
+	};
+
+	type Anchor = { parent: Element; before: HTMLElement; zIndex: string };
+	/** Right below TIDAL's header (in the full-screen view it holds the Similar tracks/Credits/Lyrics buttons) */
+	const headerAnchor = (): Anchor | undefined => {
+		const header = document.getElementById("mainHeader");
+		const row = header?.closest('div[class^="_containerRow"]');
+		if (!header || !row) return;
+		let root: HTMLElement = header;
+		for (let node: HTMLElement | null = header; node && node !== row; node = node.parentElement) if (formsStackingContext(node)) root = node;
+		lift(root);
+		const zIndex = getComputedStyle(root).zIndex;
+		return { parent: root.parentElement!, before: root, zIndex: zIndex === "auto" ? "" : zIndex };
+	};
+	/**
+	 * The blocks share the queue's layer (TIDAL keeps the queue above the full-screen view's background), and TIDAL's header
+	 * is lifted one layer above that so its buttons and search bar stay on top
+	 */
+	const raised = new Map<HTMLElement, string>();
+	const raiseAbove = (node: HTMLElement, zIndex: number) => {
+		const current = parseInt(getComputedStyle(node).zIndex);
+		if (!Number.isNaN(current) && current > zIndex) return;
+		if (!raised.has(node)) raised.set(node, node.style.zIndex);
+		node.style.zIndex = String(zIndex + 1);
+	};
+	const mountBlocks = ({ parent, before }: Anchor, zIndex: string) => {
+		if (
+			topBlock.parentElement !== parent ||
+			topBlock.nextElementSibling !== searchBlock ||
+			searchBlock.nextElementSibling !== blockProbe ||
+			blockProbe.nextElementSibling !== before
+		) {
+			parent.insertBefore(topBlock, before);
+			parent.insertBefore(searchBlock, before);
+			parent.insertBefore(blockProbe, before);
+		}
+		topBlock.style.zIndex = searchBlock.style.zIndex = zIndex;
+	};
+
+	/** TIDAL's full-screen view (song, lyrics, credits…) when it's showing */
+	const fullscreenView = () => {
+		const nowPlaying = document.getElementById("nowPlaying");
+		if (!nowPlaying) return;
+		const probeAt = document.elementFromPoint(window.innerWidth * 0.2, window.innerHeight * 0.5);
+		return probeAt && nowPlaying.contains(probeAt) ? nowPlaying : undefined;
+	};
+	const titleBarBottom = () => {
+		const bar = document.querySelector<HTMLElement>('div[class^="_mainContainer"] > div[class^="_bar"]')?.getBoundingClientRect();
+		return bar && bar.height > 0 ? bar.bottom : 0;
+	};
+
+	/**
+	 * Sets a fixed element's box, correcting for ancestors that move fixed elements: by `origin` (where 0,0 ends up),
+	 * or by measuring the element itself.
+	 */
+	const setBox = (node: HTMLElement, left: number, top: number, width: number, height: number, origin?: DOMRect, important = false) => {
+		const set = (prop: string, value: number) => node.style.setProperty(prop, `${value}px`, important ? "important" : "");
+		set("width", Math.max(0, width));
+		set("height", Math.max(0, height));
+		if (origin) {
+			set("left", left - origin.left);
+			set("top", top - origin.top);
+			return;
+		}
+		set("left", left);
+		set("top", top);
+		const actual = node.getBoundingClientRect();
+		if (Math.abs(actual.left - left) > 0.5) set("left", 2 * left - actual.left);
+		if (Math.abs(actual.top - top) > 0.5) set("top", 2 * top - actual.top);
+	};
+
+	/** The search bar starts `margin` right of `left`, `margin` being the profile picture's distance to the window's right edge */
+	const SEARCH_STYLES = ["width", "min-width", "max-width", "flex"] as const;
+	let fittedSearch: HTMLElement | undefined;
+	const unfitSearch = () => {
+		if (fittedSearch) for (const prop of SEARCH_STYLES) fittedSearch.style.removeProperty(prop);
+		fittedSearch = undefined;
+	};
+	const fitSearch = (left: number) => {
+		const search = document.querySelector<HTMLElement>('#mainHeader [data-test="search-popover-container"]');
+		const profile = document.querySelector<HTMLElement>('#mainHeader [data-test="header-profile-menu-button"]');
+		const picture = profile?.querySelector("img") ?? profile;
+		if (search !== fittedSearch) unfitSearch();
+		if (!search || !picture) return;
+		fittedSearch = search;
+		// The field and its cancel button stay clickable above the results box and TIDAL's close-on-click-outside layer
+		for (const node of search.querySelectorAll<HTMLElement>(':scope > [data-type="search-field"], :scope > [data-test="search-input-cancel"]')) {
+			lift(node);
+			if (!raised.has(node)) raised.set(node, node.style.zIndex);
+			node.style.zIndex = "1001";
+		}
+		for (const prop of SEARCH_STYLES) search.style.removeProperty(prop);
+		const right = search.getBoundingClientRect().right;
+		const margin = document.documentElement.clientWidth - picture.getBoundingClientRect().right;
+		// `width` may exclude padding and border
+		const style = getComputedStyle(search);
+		const extra =
+			style.boxSizing === "border-box"
+				? 0
+				: ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"].reduce((sum, prop) => sum + (parseFloat(style[prop as "paddingLeft"]) || 0), 0);
+		const width = `${Math.max(120, right - (left + margin) - extra)}px`;
+		search.style.setProperty("width", width, "important");
+		search.style.setProperty("min-width", width, "important");
+		search.style.setProperty("max-width", width, "important");
+		search.style.setProperty("flex", "none", "important");
+		return search.getBoundingClientRect();
+	};
+
+	/** TIDAL's search results, moved into the search block */
+	const POPOVER = '[data-test="search-popover-popover"]';
+	const POPOVER_STYLES = ["left", "top", "width", "height"] as const;
+	let styledPopover: HTMLElement | undefined;
+	let fittedList: HTMLElement | undefined;
+	// The search block follows the list's height as results come and go
+	const listObserver = new ResizeObserver(() => place());
+	unloads.add(() => listObserver.disconnect());
+	const unstylePopover = () => {
+		if (styledPopover) {
+			styledPopover.classList.remove("oq-search-popover");
+			for (const prop of POPOVER_STYLES) styledPopover.style.removeProperty(prop);
+		}
+		for (const prop of ["top", "height", "max-height"]) fittedList?.style.removeProperty(prop);
+		listObserver.disconnect();
+		styledPopover = fittedList = undefined;
+	};
+	/**
+	 * TIDAL blocks wheel scrolling outside where it expects its results. Its blocker doesn't get to see wheel events over the
+	 * results, so the list scrolls natively. If something blocks it anyway, the list is scrolled by hand (eased, like native).
+	 */
+	let easeTarget = 0;
+	let easeFrame = 0;
+	let easeList: HTMLElement | undefined;
+	const easeStep = () => {
+		if (!easeList) return (easeFrame = 0);
+		const diff = easeTarget - easeList.scrollTop;
+		if (Math.abs(diff) < 1) {
+			easeList.scrollTop = easeTarget;
+			return (easeFrame = 0);
+		}
+		easeList.scrollTop += diff * 0.25;
+		easeFrame = requestAnimationFrame(easeStep);
+	};
+	const scrollByHand = (list: HTMLElement, delta: number) => {
+		if (easeFrame === 0 || easeList !== list) easeTarget = list.scrollTop;
+		easeList = list;
+		easeTarget = Math.max(0, Math.min(list.scrollHeight - list.clientHeight, easeTarget + delta));
+		easeFrame ||= requestAnimationFrame(easeStep);
+	};
+	const onResultsWheel = (e: WheelEvent) => {
+		const popover = styledPopover;
+		if (!popover || !(e.target instanceof Node) || !popover.contains(e.target)) return;
+		const list = popover.firstElementChild as HTMLElement | null;
+		if (!list) return;
+		e.stopPropagation();
+		const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * list.clientHeight : e.deltaY;
+		setTimeout(() => e.defaultPrevented && scrollByHand(list, delta));
+	};
+	window.addEventListener("wheel", onResultsWheel, { capture: true, passive: false });
+	unloads.add(() => {
+		window.removeEventListener("wheel", onResultsWheel, { capture: true });
+		cancelAnimationFrame(easeFrame);
+	});
+
+	/** `listTop`: where TIDAL's list inside starts, below the search bar */
+	const stylePopover = (popover: HTMLElement, left: number, top: number, width: number, height: number, listTop: number) => {
+		if (popover !== styledPopover) unstylePopover();
+		styledPopover = popover;
+		popover.classList.add("oq-search-popover");
+		setBox(popover, left, top, width, height, undefined, true);
+		const list = popover.firstElementChild as HTMLElement | null;
+		if (list !== fittedList) {
+			listObserver.disconnect();
+			if (list) listObserver.observe(list);
+		}
+		fittedList = list ?? undefined;
+		if (!list) return;
+		// As tall as its content, at most down to the end of the block
+		list.style.setProperty("top", `${listTop}px`, "important");
+		list.style.setProperty("height", "auto", "important");
+		list.style.setProperty("max-height", `calc(100% - ${listTop}px)`, "important");
+		return list.getBoundingClientRect();
+	};
+
+	// Remembered for when the queue is closed
+	let queueWidth = 0;
+	let queueTop = 0;
+	let heroBottom = 0;
+	const defaultQueueWidth = () =>
+		parseFloat(getComputedStyle(document.querySelector(".has-footer-player") ?? document.documentElement).getPropertyValue("--playQueueWidth")) || 350;
+
+	/** Blocks, search bar and search results, around the queue (`queueRect`) or where it would be */
+	const layoutHeader = (queueRect: DOMRect | undefined) => {
+		const clientWidth = document.documentElement.clientWidth;
+		const top = titleBarBottom();
+		if (queueRect) {
+			queueWidth = clientWidth - queueRect.left;
+			queueTop = queueRect.top;
+			heroBottom = queueRect.top + hero.offsetHeight;
+		}
+		const width = queueWidth || defaultQueueWidth();
+		const queueLeft = clientWidth - width;
+		const fullscreen = fullscreenView();
+		const anchor = headerAnchor();
+		if (anchor) {
+			const queueLayer = parseInt(panel.style.zIndex);
+			if (!Number.isNaN(queueLayer)) raiseAbove(anchor.before, queueLayer);
+			mountBlocks(anchor, Number.isNaN(queueLayer) ? anchor.zIndex : String(queueLayer));
+		}
+		const origin = blockProbe.getBoundingClientRect();
+
+		const showTop = anchor !== undefined && queueRect !== undefined && queueRect.top - top >= 1;
+		if (showTop) setBox(topBlock, queueRect.left, top, width, queueRect.top - top, origin);
+		topBlock.classList.toggle("is-open", showTop);
+
+		// Searching: a block left of the queue (or where the queue would be), down to the end of the big cover
+		const popover = fullscreen ? null : document.querySelector<HTMLElement>(POPOVER);
+		const searching = popover !== null && anchor !== undefined;
+		const searchLeft = searching && queueRect ? queueLeft - width : queueLeft;
+		const bottom = heroBottom || top + 58 + Math.min(width, window.innerHeight * 0.46);
+		searchBlock.classList.toggle("is-open", searching);
+		// One surface with the block above the queue, no line between them
+		topBlock.classList.toggle("is-joined", searching && queueRect !== undefined);
+
+		if (!fullscreen) fitSearch(searchLeft);
+		// Exactly the search block, TIDAL's content fills it (and leaves room for the search bar itself)
+		if (searching && popover) {
+			// The first result lines up with the top of the queue's big cover
+			const headerBottom = document.getElementById("mainHeader")?.getBoundingClientRect().bottom ?? top;
+			const listTop = Math.max(0, (queueTop || headerBottom) - top);
+			const list = stylePopover(popover, searchLeft, top, width, bottom - top, listTop);
+			// Shorter when there are only a few results
+			const blockBottom = list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
+			setBox(searchBlock, searchLeft, top, width, blockBottom - top, origin);
+		} else unstylePopover();
+	};
+
 	let open = false;
 	const setOpen = (value: boolean) => {
 		if (value === open) return;
@@ -413,19 +679,20 @@ const createPanel = (unloads: LunaUnloads) => {
 	let placeFailed = false;
 	const place = () => {
 		try {
-			placePanel();
+			layoutHeader(placeQueue());
 		} catch (err) {
 			if (!placeFailed) trace.msg.err.withContext("Couldn't show the play queue")(err as Error);
 			placeFailed = true;
 		}
 	};
-	const placePanel = () => {
+	/** Returns where the queue is, if it's open */
+	const placeQueue = (): DOMRect | undefined => {
 		const aside = tidalAside();
 		const wrapper = aside?.parentElement;
-		if (!aside || !wrapper || !isTidalQueueOpen(aside)) return setOpen(false);
+		if (!aside || !wrapper || !isTidalQueueOpen(aside)) return void setOpen(false);
 		if (panel.previousElementSibling !== wrapper || probe.previousElementSibling !== panel) wrapper.after(panel, probe);
 		const rect = aside.getBoundingClientRect();
-		if (rect.width < 40 || rect.height < 40) return setOpen(false);
+		if (rect.width < 40 || rect.height < 40) return void setOpen(false);
 		const footer = document.getElementById("footerPlayer")?.getBoundingClientRect();
 		const bottom = footer && footer.height > 0 ? footer.top : window.innerHeight;
 		const origin = probe.getBoundingClientRect();
@@ -440,6 +707,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		});
 		setOpen(true);
 		updateScrollbar();
+		return rect;
 	};
 
 	// Follow TIDAL's own open/close animation for a moment
@@ -475,17 +743,23 @@ const createPanel = (unloads: LunaUnloads) => {
 	});
 	observe(unloads, "#footerPlayer", (footer) => watch(footer));
 	window.addEventListener("resize", place);
+	// Search results opening/closing, the full-screen view opening/closing
+	observe(unloads, POPOVER, () => follow());
+	observe(unloads, "#nowPlaying", () => follow());
+	const onFocusChange = () => follow();
+	document.addEventListener("focusin", onFocusChange);
+	document.addEventListener("focusout", onFocusChange);
 	// #endregion
 
 	// #region Store
 	let lastQueue: unknown;
 	let lastItems: unknown;
-	let lastShown: unknown;
+	let lastView: unknown;
 	const unsubscribe = redux.store.subscribe(() => {
 		const state = redux.store.getState();
-		const shown = state.view?.showPlayQueueAside;
-		if (shown !== lastShown) {
-			lastShown = shown;
+		// Queue, full-screen view or search opened/closed
+		if (state.view !== lastView) {
+			lastView = state.view;
 			follow();
 		}
 		// In case TIDAL replaced its queue without us noticing
@@ -925,12 +1199,21 @@ const createPanel = (unloads: LunaUnloads) => {
 		contentObserver.disconnect();
 		classObserver.disconnect();
 		window.removeEventListener("resize", place);
+		document.removeEventListener("focusin", onFocusChange);
+		document.removeEventListener("focusout", onFocusChange);
 		clearInterval(ticker);
 		cancelAnimationFrame(frame);
 		cancelAnimationFrame(followFrame);
 		cancelAnimationFrame(autoScroll);
 		panel.remove();
 		probe.remove();
+		topBlock.remove();
+		searchBlock.remove();
+		blockProbe.remove();
+		unfitSearch();
+		unstylePopover();
+		for (const [node, position] of lifted) node.style.position = position;
+		for (const [node, zIndex] of raised) node.style.zIndex = zIndex;
 	};
 	unloads.add(unload);
 };
