@@ -91,14 +91,4 @@ export const formatLength = (seconds: number) => {
 	return m === 0 ? `${h} h` : `${h} h ${m} min`;
 };
 
-const clockFormat = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
-/** "21:34", or "9:34" in 12-hour locales (no AM/PM, it's always within the next hours) */
-export const formatClock = (epochMs: number) =>
-	clockFormat
-		.formatToParts(epochMs)
-		.filter(({ type }) => type !== "dayPeriod")
-		.map(({ value }) => value)
-		.join("")
-		.trim();
-
 export const songCount = (count: number) => `${count} ${count === 1 ? "song" : "songs"}`;

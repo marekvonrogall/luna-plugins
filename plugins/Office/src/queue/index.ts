@@ -5,7 +5,7 @@ import styles from "file://styles.css?minify";
 
 import { trace } from "../log";
 import { settings, settingsListeners } from "../Settings";
-import { artistNames, coverUrl, formatClock, formatDuration, formatLength, songCount, trackInfo, type TrackInfo } from "./data";
+import { artistNames, coverUrl, formatDuration, formatLength, songCount, trackInfo, type TrackInfo } from "./data";
 
 type Element_ = redux.PlayQueueElement;
 type Mode = "next" | "history";
@@ -80,7 +80,6 @@ const swapImage = (container: HTMLElement, url: string | undefined, state: { url
 
 interface Row {
 	node: HTMLDivElement;
-	gutter: HTMLSpanElement;
 	cover: HTMLImageElement;
 	title: HTMLDivElement;
 	artist: HTMLDivElement;
@@ -198,11 +197,9 @@ const createPanel = (unloads: LunaUnloads) => {
 		node.tabIndex = 0;
 		node.setAttribute("role", "listitem");
 		node.dataset.uid = uid;
-		const gutter = h("span", "oq-gutter");
-		const gutterPlay = h("span", "oq-gutter-play");
-		gutterPlay.innerHTML = SVG(ICON.play, 14);
-		const gutterWrap = h("span", "oq-gutter-wrap");
-		gutterWrap.append(gutter, gutterPlay);
+		const coverWrap = h("span", "oq-cover-wrap");
+		const coverPlay = h("span", "oq-cover-play");
+		coverPlay.innerHTML = SVG(ICON.play, 16);
 		const cover = h("img", "oq-cover");
 		cover.alt = "";
 		cover.loading = "lazy";
@@ -218,16 +215,16 @@ const createPanel = (unloads: LunaUnloads) => {
 		const remove = iconButton("remove", ICON.close, "Remove from the queue", "oq-row-btn", 16);
 		actions.append(remove, iconButton("more", ICON.more, "More options", "oq-row-btn", 18));
 		end.append(duration, actions);
-		node.append(gutterWrap, cover, text, end);
-		return { node, gutter, cover, title, artist, duration, remove };
+		coverWrap.append(cover, coverPlay);
+		node.append(coverWrap, text, end);
+		return { node, cover, title, artist, duration, remove };
 	};
 
-	const updateRow = (element: Element_, index: number, gutterText: string, used: Set<string>) => {
+	const updateRow = (element: Element_, index: number, used: Set<string>) => {
 		used.add(element.uid);
 		let row = rows.get(element.uid);
 		if (row === undefined) rows.set(element.uid, (row = makeRow(element.uid)));
 		row.node.dataset.index = String(index);
-		if (row.gutter.textContent !== gutterText) row.gutter.textContent = gutterText;
 		const info = trackInfo(element.mediaItemId, onLoad);
 		if (info !== row.info) {
 			row.info = info;
@@ -298,7 +295,9 @@ const createPanel = (unloads: LunaUnloads) => {
 				item = h("button", "oq-strip-item");
 				item.type = "button";
 				item.dataset.action = "play";
-				item.appendChild(Object.assign(h("img"), { alt: "", loading: "lazy", decoding: "async", draggable: false }));
+				const playIcon = h("span", "oq-strip-play");
+				playIcon.innerHTML = SVG(ICON.play, 18);
+				item.append(Object.assign(h("img"), { alt: "", loading: "lazy", decoding: "async", draggable: false }), playIcon);
 				stripItems.set(element.uid, item);
 			}
 			item.dataset.index = String(index);
@@ -342,25 +341,16 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (mode === "history") {
 			queued.root.hidden = upNext.root.hidden = empty.hidden = true;
 			history.detail.textContent = songCount(played.length);
-			const nodes = played.map(({ element, index }) => updateRow(element, index, "", used));
+			const nodes = played.map(({ element, index }) => updateRow(element, index, used));
 			fillSection(history, nodes, played.map((p) => p.element.uid).join());
 			if (played.length === 0) history.list.replaceChildren(h("p", "oq-empty", "Songs you've played show up here."));
 		} else {
-			// When each upcoming song starts, assuming nothing is skipped
-			const remaining = Math.max(0, (currentInfo?.duration ?? 0) - PlayState.currentTime);
-			let startsAt = Date.now() + remaining * 1000;
-			const upcoming = elements.slice(currentIndex + 1).map((element, offset) => {
-				const index = currentIndex + 1 + offset;
-				const start = startsAt;
-				startsAt += (trackInfo(element.mediaItemId, onLoad)?.duration ?? 0) * 1000;
-				const gutter = settings.queueGutter === "position" ? String(offset + 1) : formatClock(start);
-				return { element, index, gutter };
-			});
+			const upcoming = elements.slice(currentIndex + 1).map((element, offset) => ({ element, index: currentIndex + 1 + offset }));
 			const fill = (section: Section, items: typeof upcoming) => {
 				section.root.hidden = items.length === 0;
 				const seconds = items.reduce((sum, { element }) => sum + (trackInfo(element.mediaItemId, onLoad)?.duration ?? 0), 0);
 				section.detail.textContent = `${songCount(items.length)}, ${formatLength(seconds)}`;
-				const nodes = items.map(({ element, index, gutter }) => updateRow(element, index, gutter, used));
+				const nodes = items.map(({ element, index }) => updateRow(element, index, used));
 				fillSection(section, nodes, items.map((item) => item.element.uid).join());
 			};
 			fill(
@@ -476,7 +466,6 @@ const createPanel = (unloads: LunaUnloads) => {
 	let lastQueue: unknown;
 	let lastItems: unknown;
 	let lastShown: unknown;
-	let lastTrack: unknown;
 	const unsubscribe = redux.store.subscribe(() => {
 		const state = redux.store.getState();
 		const shown = state.view?.showPlayQueueAside;
@@ -490,10 +479,6 @@ const createPanel = (unloads: LunaUnloads) => {
 			follow();
 		}
 		if (state.playQueue !== lastQueue || state.content.mediaItems !== lastItems) {
-			const track = state.playQueue.elements[state.playQueue.currentIndex]?.uid;
-			// Back to the current song when it changes, like TIDAL
-			if (track !== lastTrack && lastTrack !== undefined && open && mode === "next") scroll.scrollTo({ top: 0 });
-			lastTrack = track;
 			lastQueue = state.playQueue;
 			lastItems = state.content.mediaItems;
 			schedule();
@@ -504,8 +489,6 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!open || document.hidden) return;
 		renderProgress();
 	}, 500);
-	// Start times drift while paused
-	const clock = setInterval(() => open && settings.queueGutter === "time" && schedule(), 20000);
 	// #endregion
 
 	// #region Mini bar
@@ -562,8 +545,13 @@ const createPanel = (unloads: LunaUnloads) => {
 		const row = rowOf(target);
 		if (button) {
 			switch (button.dataset.action) {
-				case "close":
-					return redux.actions["view/HIDE_PLAY_QUEUE_ASIDE"]();
+				case "close": {
+					// TIDAL's own close button, the store action doesn't close it in every TIDAL version
+					const close = document.querySelector<HTMLElement>('#playQueueSidebar [data-test="playqueue-close-button"]');
+					if (close) close.click();
+					else redux.actions["view/TOGGLE_PLAY_QUEUE_VISIBILITY"]();
+					return;
+				}
 				case "save": {
 					const save = document.querySelector<HTMLElement>('#playQueueSidebar [data-test="playqueue-save-button"]');
 					if (save) save.click();
@@ -726,7 +714,6 @@ const createPanel = (unloads: LunaUnloads) => {
 		classObserver.disconnect();
 		window.removeEventListener("resize", place);
 		clearInterval(ticker);
-		clearInterval(clock);
 		cancelAnimationFrame(frame);
 		cancelAnimationFrame(followFrame);
 		cancelAnimationFrame(autoScroll);
