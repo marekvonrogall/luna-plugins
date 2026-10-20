@@ -69,7 +69,8 @@
 	flex: none;
 	margin: 0;
 }
-#sidebar:not(:has([data-test="sidebar-expand"])) [data-test="sidebar-collapse"]:not(:disabled, [aria-disabled="true"]) {
+/* Also while TIDAL disables it (full-screen view open) */
+#sidebar:not(:has([data-test="sidebar-expand"])) [data-test="sidebar-collapse"] {
 	display: grid;
 	margin-left: auto;
 }
@@ -573,50 +574,49 @@
 	font-weight: 400;
 	line-height: 1.3;
 }
-/* Playlist the current song plays from */
-#sidebar [data-test="sidebar-scrollable-nav"] > a[data-office-playing]::after {
-	content: "";
+/* Bars on the playlist the current song plays from (index.ts adds them) */
+#sidebar .osb-bars {
+	display: flex;
 	flex: none;
-	width: 12px;
+	order: 99;
+	align-items: flex-end;
+	gap: 2px;
+	width: 13px;
 	height: 12px;
-	color: rgba(255, 255, 255, 0.8);
-	background:
-		linear-gradient(currentColor, currentColor) 0 100% / 3px 45% no-repeat,
-		linear-gradient(currentColor, currentColor) 50% 100% / 3px 100% no-repeat,
-		linear-gradient(currentColor, currentColor) 100% 100% / 3px 65% no-repeat;
-	animation: osb-bars 1.1s steps(1, end) infinite;
+	margin-left: 4px;
+	pointer-events: none;
 }
-#sidebar [data-test="sidebar-scrollable-nav"] > a[data-office-playing="paused"]::after {
+#sidebar .osb-bars > i {
+	flex: 1;
+	height: 100%;
+	border-radius: 1px;
+	background: rgba(255, 255, 255, 0.85);
+	transform-origin: bottom;
+	animation: osb-bar 0.9s ease-in-out infinite alternate;
+	will-change: transform;
+}
+#sidebar .osb-bars > i:nth-child(1) {
+	animation-duration: 0.74s;
+	animation-delay: -0.3s;
+}
+#sidebar .osb-bars > i:nth-child(2) {
+	animation-duration: 0.53s;
+	animation-delay: -0.1s;
+}
+#sidebar .osb-bars > i:nth-child(3) {
+	animation-duration: 0.87s;
+	animation-delay: -0.62s;
+}
+#sidebar [data-office-playing="paused"] .osb-bars > i {
 	animation: none;
-	background-size:
-		3px 35%,
-		3px 35%,
-		3px 35%;
+	transform: scaleY(0.3);
 }
-@keyframes osb-bars {
-	0% {
-		background-size:
-			3px 45%,
-			3px 100%,
-			3px 65%;
+@keyframes osb-bar {
+	from {
+		transform: scaleY(0.25);
 	}
-	25% {
-		background-size:
-			3px 85%,
-			3px 55%,
-			3px 35%;
-	}
-	50% {
-		background-size:
-			3px 30%,
-			3px 80%,
-			3px 100%;
-	}
-	75% {
-		background-size:
-			3px 70%,
-			3px 40%,
-			3px 60%;
+	to {
+		transform: scaleY(1);
 	}
 }
 
@@ -647,7 +647,7 @@
 #sidebar:has([data-test="sidebar-expand"]) :has(> a[data-test^="sidebar-collection-"]):not(#sidebar-content, [role="menu"]) > :first-child:not(a),
 #sidebar:has([data-test="sidebar-expand"]) :has(> a[data-test^="sidebar-collection-"]):not(#sidebar-content, [role="menu"]) > a > span,
 #sidebar:has([data-test="sidebar-expand"]) [data-test="sidebar-scrollable-nav"] > a > :nth-child(2),
-#sidebar:has([data-test="sidebar-expand"]) [data-test="sidebar-scrollable-nav"] > a[data-office-playing]::after {
+#sidebar:has([data-test="sidebar-expand"]) .osb-bars {
 	display: none;
 }
 /* Playlist heading: just "Create" */
@@ -677,7 +677,8 @@
 	#sidebar *::after {
 		transition: none !important;
 	}
-	#sidebar [data-test="sidebar-scrollable-nav"] > a[data-office-playing]::after {
+	#sidebar .osb-bars > i {
 		animation: none;
+		transform: scaleY(0.6);
 	}
 }

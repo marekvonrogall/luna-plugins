@@ -96,6 +96,10 @@ const attach = (unloads: LunaUnloads) => {
 	let aside: HTMLElement | undefined;
 	let positioned = false;
 	let frame = 0;
+	const bars = document.createElement("span");
+	bars.className = "osb-bars";
+	bars.setAttribute("aria-hidden", "true");
+	bars.append(...Array.from({ length: 3 }, () => document.createElement("i")));
 
 	const mark = () => {
 		frame = 0;
@@ -108,6 +112,9 @@ const attach = (unloads: LunaUnloads) => {
 			setAttr(link, CURRENT, target !== undefined && isCurrent(target, path) ? "" : null);
 			setAttr(link, PLAYING, target !== undefined && target === playing ? state : null);
 		}
+		const playingRow = aside.querySelector(`[data-test="sidebar-scrollable-nav"] > a[${PLAYING}]`);
+		if (!playingRow) bars.remove();
+		else if (bars.parentElement !== playingRow) playingRow.append(bars);
 		for (const svg of aside.querySelectorAll<SVGSVGElement>(FIT_ICONS)) fitIcon(svg);
 		const menu = aside.querySelector('[data-test="sidebar-collection-menu"]');
 		if (menu) setAttr(menu, CURRENT, isCurrent("/my-collection", path) ? "" : null);
@@ -143,6 +150,7 @@ const attach = (unloads: LunaUnloads) => {
 	const release = () => {
 		contentObserver.disconnect();
 		resizeObserver.disconnect();
+		bars.remove();
 		if (!aside) return;
 		aside.removeEventListener("scroll", onScroll, true);
 		aside.removeEventListener("pointerover", schedule);

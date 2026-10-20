@@ -8,12 +8,14 @@ type Settings = {
 	queueTint: boolean;
 	dockedPlayer: boolean;
 	sidebar: boolean;
+	pinnedSidebar: boolean;
 };
 export const settings = await ReactiveStore.getPluginStorage<Settings>("Office", {
 	queue: true,
 	queueTint: true,
 	dockedPlayer: true,
 	sidebar: true,
+	pinnedSidebar: true,
 });
 
 export const settingsListeners = new Set<() => void>();
@@ -24,6 +26,7 @@ export const Settings = () => {
 	const [queueTint, setQueueTint] = React.useState(settings.queueTint);
 	const [dockedPlayer, setDockedPlayer] = React.useState(settings.dockedPlayer);
 	const [sidebar, setSidebar] = React.useState(settings.sidebar);
+	const [pinnedSidebar, setPinnedSidebar] = React.useState(settings.pinnedSidebar);
 
 	return (
 		<LunaSettings>
@@ -60,6 +63,15 @@ export const Settings = () => {
 				checked={sidebar}
 				onChange={(_: unknown, checked: boolean) => {
 					setSidebar((settings.sidebar = checked));
+					changed();
+				}}
+			/>
+			<LunaSwitchSetting
+				title="Pinned sidebar"
+				desc="Always keeps the sidebar visible"
+				checked={pinnedSidebar}
+				onChange={(_: unknown, checked: boolean) => {
+					setPinnedSidebar((settings.pinnedSidebar = checked));
 					changed();
 				}}
 			/>
