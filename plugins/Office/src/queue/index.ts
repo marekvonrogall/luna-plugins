@@ -818,9 +818,25 @@ const createPanel = (unloads: LunaUnloads) => {
 			const tidal = tidalButton(test);
 			proxy.disabled = tidal === null;
 			proxy.classList.toggle("is-active", tidal?.getAttribute("aria-pressed") === "true");
-			// TIDAL's wording (language)
-			const text = tidal?.textContent?.trim();
-			if (text && !proxy.classList.contains("oq-cap-btn--icon") && proxy.textContent !== text) proxy.textContent = text;
+			if (proxy.classList.contains("oq-cap-btn--icon")) {
+				// TIDAL's current icon (e.g. maximize/minimize) and label
+				const tidalSvg = tidal?.querySelector("svg");
+				const href = tidalSvg?.querySelector("use")?.getAttribute("href");
+				const svg = proxy.querySelector("svg");
+				const use = svg?.querySelector("use");
+				if (href && use && use.getAttribute("href") !== href) use.setAttribute("href", href);
+				const viewBox = tidalSvg?.getAttribute("viewBox");
+				if (viewBox && svg && svg.getAttribute("viewBox") !== viewBox) svg.setAttribute("viewBox", viewBox);
+				const label = tidal?.getAttribute("aria-label");
+				if (label && proxy.title !== label) {
+					proxy.title = label;
+					proxy.setAttribute("aria-label", label);
+				}
+			} else {
+				// TIDAL's wording (language)
+				const text = tidal?.textContent?.trim();
+				if (text && proxy.textContent !== text) proxy.textContent = text;
+			}
 		}
 	};
 	const pressTidalButton = (test: string) => tidalButton(test)?.click();
@@ -870,7 +886,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			headerObserver.disconnect();
 			mirroredView = view;
 			const header = view?.querySelector(":scope > header");
-			if (header) headerObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-pressed", "class"] });
+			if (header) headerObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-pressed", "class", "href", "aria-label", "viewBox"] });
 		}
 		cap.classList.toggle("has-buttons", view !== undefined && queueOpen);
 		if (view && queueOpen) {
@@ -1025,8 +1041,10 @@ const createPanel = (unloads: LunaUnloads) => {
 		const wrapper = aside?.parentElement;
 		if (!aside || !wrapper || !isTidalQueueOpen(aside)) return void setOpen(false);
 		if (panel.previousElementSibling !== wrapper || probe.previousElementSibling !== panel) wrapper.after(panel, probe);
-		const rect = layoutRect(aside);
-		if (rect.width < 40 || rect.height < 40) return void setOpen(false);
+		const box = layoutRect(aside);
+		if (box.width < 40 || box.height < 40) return void setOpen(false);
+		const marginLeft = parseFloat(getComputedStyle(aside).marginLeft) || 0;
+		const rect = new DOMRect(box.left - marginLeft, box.top, box.width + marginLeft, box.height);
 		const footer = document.getElementById("footerPlayer")?.getBoundingClientRect();
 		const bottom = footer && footer.height > 0 ? footer.top : window.innerHeight;
 		const origin = probe.getBoundingClientRect();
