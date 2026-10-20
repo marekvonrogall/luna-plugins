@@ -437,13 +437,41 @@ const createPanel = (unloads: LunaUnloads) => {
 				await waitFor(() => PlayState.playQueue.elements.length >= length + replay.length);
 			}
 		} finally {
-			// TIDAL may still be settling; don't count that as plays
-			setTimeout(() => {
-				replaying = false;
-				snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
-			}, 800);
+			settle();
 		}
 	};
+	// TIDAL may still be settling; don't count that as plays
+	const settle = () =>
+		setTimeout(() => {
+			replaying = false;
+			snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
+		}, 800);
+
+	/** Going back from the song after an anchor plays its last remembered song, not the anchor (TIDAL's pick) */
+	const backToRemembered = () => {
+		const { elements, currentIndex } = PlayState.playQueue;
+		const anchor = elements[currentIndex - 1];
+		const entry = anchor && playedQueued.filter((played) => played.anchor === anchor.uid).sort((a, b) => a.seq - b.seq).pop();
+		if (replaying || !entry) return false;
+		replaying = true;
+		playedQueued = playedQueued.filter((played) => played !== entry);
+		setTimeout(async () => {
+			try {
+				const known = new Set(elements.map((element) => element.uid));
+				redux.actions["playQueue/ADD_AT_INDEX"]({ index: currentIndex, mediaItemIds: [entry.mediaItemId], context: entry.context });
+				await waitFor(() => PlayState.playQueue.elements.some((element) => !known.has(element.uid)));
+				const index = PlayState.playQueue.elements.findIndex((element) => !known.has(element.uid));
+				if (index < 0) return;
+				PlayState.moveTo(index);
+				PlayState.play();
+				await waitFor(() => PlayState.playQueue.currentIndex === index);
+			} finally {
+				settle();
+			}
+		});
+		return true;
+	};
+	redux.intercept("playQueue/MOVE_PREVIOUS", unloads, () => backToRemembered() || undefined);
 	const playEntry = (node: HTMLElement) => {
 		const uid = node.dataset.uid;
 		const index = Number(node.dataset.index);
