@@ -7,6 +7,7 @@ type Settings = {
 	queue: boolean;
 	queueTint: boolean;
 	dockedPlayer: boolean;
+	pinnedCover: boolean;
 	playerBar: boolean;
 	sidebar: boolean;
 	sidebarTint: boolean;
@@ -16,6 +17,7 @@ export const settings = await ReactiveStore.getPluginStorage<Settings>("Office",
 	queue: true,
 	queueTint: true,
 	dockedPlayer: true,
+	pinnedCover: false,
 	playerBar: true,
 	sidebar: true,
 	sidebarTint: false,
@@ -34,6 +36,7 @@ export const Settings = () => {
 	const [queue, setQueue] = React.useState(settings.queue);
 	const [queueTint, setQueueTint] = React.useState(settings.queueTint);
 	const [dockedPlayer, setDockedPlayer] = React.useState(settings.dockedPlayer);
+	const [pinnedCover, setPinnedCover] = React.useState(settings.pinnedCover);
 	const [playerBar, setPlayerBar] = React.useState(settings.playerBar);
 	const [sidebar, setSidebar] = React.useState(settings.sidebar);
 	const [sidebarTint, setSidebarTint] = React.useState(settings.sidebarTint);
@@ -68,6 +71,15 @@ export const Settings = () => {
 				checked={dockedPlayer}
 				onChange={(_: unknown, checked: boolean) => {
 					setDockedPlayer((settings.dockedPlayer = checked));
+					changed();
+				}}
+			/>
+			<LunaSwitchSetting
+				title="Pinned cover"
+				desc="Keeps the cover in the player bar while the full-screen view is open"
+				checked={pinnedCover}
+				onChange={(_: unknown, checked: boolean) => {
+					setPinnedCover((settings.pinnedCover = checked));
 					changed();
 				}}
 			/>
