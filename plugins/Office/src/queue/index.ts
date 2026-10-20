@@ -758,9 +758,27 @@ const createPanel = (unloads: LunaUnloads) => {
 	/** The full-screen view on screen (TIDAL renders two) */
 	const fullscreenView = () => {
 		const probeAt = document.elementFromPoint(window.innerWidth * 0.2, window.innerHeight * 0.5);
-		return probeAt?.closest<HTMLElement>('[data-test="new-now-playing"]') ?? undefined;
+		const onScreen = probeAt?.closest<HTMLElement>('[data-test="new-now-playing"]');
+		if (onScreen) return onScreen;
+		if (!document.getElementById("footerPlayer")?.classList.contains("nowPlayingVisible")) return;
+		const visible = (view: HTMLElement) => {
+			const rect = view.getBoundingClientRect();
+			return Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
+		};
+		const buttons = HEAD_BUTTONS.map(({ test }) => `:scope > header [data-test="${test}"]`).join(", ");
+		return [...document.querySelectorAll<HTMLElement>('[data-test="new-now-playing"]')]
+			.filter((view) => view.getClientRects().length > 0 && view.querySelector(buttons))
+			.reduce<HTMLElement | undefined>((best, view) => (best === undefined || visible(view) >= visible(best) ? view : best), undefined);
 	};
 	/** The title bar, if any, sits right above the main row */
+	/** TIDAL drops `nowPlayingVisible` from its player bar as soon as the full-screen view starts closing (the view takes a while) */
+	let sawNowPlayingClass = false;
+	const nowPlayingClosing = () => {
+		const footer = document.getElementById("footerPlayer");
+		if (!footer) return false;
+		if (footer.classList.contains("nowPlayingVisible")) sawNowPlayingClass = true;
+		return sawNowPlayingClass && !footer.classList.contains("nowPlayingVisible");
+	};
 	const titleBarBottom = () => Math.max(0, mainRow()?.getBoundingClientRect().top ?? 0);
 
 	/** Sets a fixed element's box, correcting for ancestors that offset fixed positioning */
@@ -1052,15 +1070,16 @@ const createPanel = (unloads: LunaUnloads) => {
 		centeredButtons = undefined;
 		centeredShift = 0;
 	};
-	const layoutFullscreenButtons = (view: HTMLElement | undefined, queueOpen: boolean, columnLeft: number, columnWidth: number) => {
+	/** `closing`: the view is still sliding away, the copies go right away */
+	const layoutFullscreenButtons = (view: HTMLElement | undefined, queueOpen: boolean, columnLeft: number, columnWidth: number, closing: boolean) => {
 		if (view !== mirroredView) {
 			headerObserver.disconnect();
 			mirroredView = view;
 			const header = view?.querySelector(":scope > header");
 			if (header) headerObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-pressed", "class", "href", "aria-label", "viewBox"] });
 		}
-		cap.classList.toggle("has-buttons", view !== undefined && queueOpen);
-		if (view && queueOpen) {
+		cap.classList.toggle("has-buttons", view !== undefined && queueOpen && !closing);
+		if (view && queueOpen && !closing) {
 			updateProxies();
 			// Roomiest level that fits, with equal margins
 			const levels = ["is-loose", "is-snug", "is-tight", "is-tighter"];
@@ -1127,7 +1146,9 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 		const width = queueWidth || defaultQueueWidth();
 		const queueLeft = clientWidth - width;
-		const fullscreen = fullscreenView();
+		const view = fullscreenView();
+		const closing = view !== undefined && nowPlayingClosing();
+		const fullscreen = closing ? undefined : view;
 		const anchor = headerAnchor();
 		if (anchor && anchor.before) {
 			const queueLayer = parseInt(panel.style.zIndex);
@@ -1136,7 +1157,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 		const origin = blockProbe.getBoundingClientRect();
 
-		layoutFullscreenButtons(fullscreen, queueRect !== undefined, queueLeft, width);
+		layoutFullscreenButtons(view, queueRect !== undefined, queueLeft, width, closing);
 
 		// Search block: left of the queue, down to the end of the big cover
 		const popover = fullscreen ? null : document.querySelector<HTMLElement>(POPOVER);
@@ -1256,13 +1277,25 @@ const createPanel = (unloads: LunaUnloads) => {
 	};
 	const watch = (node: Element | null) => node && resizeObserver.observe(node);
 	watch(document.documentElement);
-	watch(document.getElementById("footerPlayer"));
 	watchAside(tidalAside());
 	observe<HTMLElement>(unloads, "#playQueueSidebar", (aside) => {
 		watchAside(aside);
 		follow();
 	});
-	observe(unloads, "#footerPlayer", (footer) => watch(footer));
+	// The player bar's class flips the moment the full-screen view opens/closes: re-laid out before the next frame
+	const footerObserver = new MutationObserver(() => {
+		place();
+		follow();
+	});
+	const watchFooter = (footer: Element | null) => {
+		if (!footer) return;
+		watch(footer);
+		footerObserver.disconnect();
+		footerObserver.observe(footer, { attributes: true, attributeFilter: ["class"] });
+	};
+	watchFooter(document.getElementById("footerPlayer"));
+	unloads.add(() => footerObserver.disconnect());
+	observe(unloads, "#footerPlayer", watchFooter);
 	window.addEventListener("resize", place);
 	// Search and full-screen view opening/closing
 	observe(unloads, POPOVER, () => follow());

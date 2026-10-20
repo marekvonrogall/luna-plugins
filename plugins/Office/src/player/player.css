@@ -1,0 +1,17 @@
+/* TIDAL lets the player bar float while the full-screen view is open: it keeps its docked look (fallbacks until measured) */
+#footerPlayer.nowPlayingVisible {
+	bottom: var(--office-dock-bottom, 0px) !important;
+	left: var(--office-dock-left, 0px) !important;
+	right: var(--office-dock-right, 0px) !important;
+	border-radius: var(--office-dock-radius, 0px) !important;
+}
+#footerPlayer.nowPlayingVisible::before {
+	opacity: var(--office-dock-before, 1) !important;
+}
+#footerPlayer.nowPlayingVisible::after {
+	opacity: var(--office-dock-after, 1) !important;
+	border-radius: var(--office-dock-after-radius, 0px) !important;
+}
+#footerPlayer.nowPlayingVisible > [aria-hidden="true"]:first-child {
+	opacity: var(--office-dock-veil, 0) !important;
+}

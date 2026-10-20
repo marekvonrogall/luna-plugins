@@ -6,10 +6,12 @@ import React from "react";
 type Settings = {
 	queue: boolean;
 	queueTint: boolean;
+	dockedPlayer: boolean;
 };
 export const settings = await ReactiveStore.getPluginStorage<Settings>("Office", {
 	queue: true,
 	queueTint: true,
+	dockedPlayer: true,
 });
 
 export const settingsListeners = new Set<() => void>();
@@ -18,6 +20,7 @@ const changed = () => settingsListeners.forEach((listener) => listener());
 export const Settings = () => {
 	const [queue, setQueue] = React.useState(settings.queue);
 	const [queueTint, setQueueTint] = React.useState(settings.queueTint);
+	const [dockedPlayer, setDockedPlayer] = React.useState(settings.dockedPlayer);
 
 	return (
 		<LunaSettings>
@@ -36,6 +39,15 @@ export const Settings = () => {
 				checked={queueTint}
 				onChange={(_: unknown, checked: boolean) => {
 					setQueueTint((settings.queueTint = checked));
+					changed();
+				}}
+			/>
+			<LunaSwitchSetting
+				title="Keep the player bar docked"
+				desc="Stops the player bar from floating while the full-screen view is open"
+				checked={dockedPlayer}
+				onChange={(_: unknown, checked: boolean) => {
+					setDockedPlayer((settings.dockedPlayer = checked));
 					changed();
 				}}
 			/>
