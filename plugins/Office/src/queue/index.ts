@@ -5,10 +5,11 @@ import styles from "file://styles.css?minify";
 
 import { trace } from "../log";
 import { settings, settingsListeners } from "../Settings";
-import { artistNames, coverUrl, formatDuration, formatLength, songCount, trackInfo, type TrackInfo } from "./data";
+import { artistNames, coverUrl, formatDuration, formatLength, knownTrackInfo, songCount, trackInfo, type TrackInfo } from "./data";
 
 type Element_ = redux.PlayQueueElement;
 type Mode = "next" | "history";
+type ListItem = { element: Element_; index: number; virtual?: string };
 
 const SVG = (d: string, size: number) =>
 	`<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
@@ -93,7 +94,7 @@ interface Section {
 	detail: HTMLSpanElement;
 	action: HTMLButtonElement;
 	list: HTMLDivElement;
-	order: string;
+	items: ListItem[];
 }
 
 const createPanel = (unloads: LunaUnloads) => {
@@ -163,7 +164,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const list = h("div", "oq-list");
 		list.setAttribute("role", "list");
 		root.append(head, list);
-		return { root, title, detail, action: button, list, order: "" };
+		return { root, title, detail, action: button, list, items: [] };
 	};
 	const queued = makeSection("clear-queued", "Clear");
 	queued.title.textContent = "Queued by you";
@@ -172,6 +173,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	const history = makeSection("next", "Back to up next");
 	history.title.textContent = "History";
 	history.list.classList.add("oq-list--history");
+	const historyEmpty = h("p", "oq-empty", "Songs you've played show up here.");
+	history.root.appendChild(historyEmpty);
 	const empty = h("p", "oq-empty", "Nothing is up next. Songs you play or add to the queue show up here.");
 
 	scroll.append(hero, recent, queued.root, upNext.root, history.root, empty);
@@ -230,11 +233,12 @@ const createPanel = (unloads: LunaUnloads) => {
 		return { node, cover, title, artist, duration, remove };
 	};
 
-	const updateRow = (element: Element_, index: number, used: Set<string>) => {
-		used.add(element.uid);
+	const updateRow = ({ element, index, virtual }: ListItem) => {
 		let row = rows.get(element.uid);
 		if (row === undefined) rows.set(element.uid, (row = makeRow(element.uid)));
 		row.node.dataset.index = String(index);
+		if (virtual) row.node.dataset.virtual = virtual;
+		else delete row.node.dataset.virtual;
 		const info = trackInfo(element.mediaItemId, onLoad);
 		if (info !== row.info) {
 			row.info = info;
@@ -246,14 +250,58 @@ const createPanel = (unloads: LunaUnloads) => {
 			else if (row.cover.src !== src) row.cover.src = src;
 			row.node.setAttribute("aria-label", info ? `${info.title} by ${artistNames(info)}` : "Loading song");
 		}
-		return row.node;
+		return row;
 	};
 
-	/** Only touches the DOM when the order changed */
-	const fillSection = (section: Section, nodes: HTMLElement[], order: string) => {
-		if (section.order === order && section.list.childElementCount === nodes.length) return;
-		section.order = order;
-		section.list.replaceChildren(...nodes);
+	// Like TIDAL, only the rows in view (and a few around them) exist; the lists keep their full height
+	const ROW_HEIGHT = 52;
+	const OVERSCAN = 8;
+	const sections = [queued, upNext, history];
+	/** Rows that stay while out of view: the dragged one */
+	let draggedUid: string | undefined;
+	const setItems = (section: Section, items: ListItem[]) => {
+		section.items = items;
+		section.list.style.height = `${items.length * ROW_HEIGHT}px`;
+	};
+	const renderRows = () => {
+		const keep = new Set<string>();
+		const pinned = new Set([draggedUid, (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".oq-row")?.dataset.uid]);
+		const viewTop = scroll.getBoundingClientRect().top;
+		const viewHeight = scroll.clientHeight;
+		for (const section of sections) {
+			const { items, list } = section;
+			if (section.root.hidden || items.length === 0) continue;
+			const top = list.getBoundingClientRect().top - viewTop;
+			const first = Math.max(0, Math.floor(-top / ROW_HEIGHT) - OVERSCAN);
+			const last = Math.min(items.length, Math.ceil((viewHeight - top) / ROW_HEIGHT) + OVERSCAN);
+			const positions: number[] = [];
+			for (let pos = first; pos < last; pos++) positions.push(pos);
+			for (const uid of pinned) {
+				const pos = uid === undefined ? -1 : items.findIndex((item) => item.element.uid === uid);
+				if (pos >= 0 && (pos < first || pos >= last)) positions.push(pos);
+			}
+			for (const pos of positions) {
+				const { node } = updateRow(items[pos]);
+				node.style.top = `${pos * ROW_HEIGHT}px`;
+				if (node.parentElement !== list) list.appendChild(node);
+				keep.add(items[pos].element.uid);
+			}
+		}
+		for (const [uid, row] of rows)
+			if (!keep.has(uid)) {
+				row.node.remove();
+				rows.delete(uid);
+			}
+	};
+	/** Scrolls a row into view (rendering it) and focuses it */
+	const focusRow = (section: Section, pos: number) => {
+		const uid = section.items[pos]?.element.uid;
+		if (uid === undefined) return;
+		if (!rows.has(uid)) {
+			scroll.scrollTop += section.list.getBoundingClientRect().top + pos * ROW_HEIGHT - scroll.getBoundingClientRect().top - scroll.clientHeight / 2;
+			renderRows();
+		}
+		rows.get(uid)?.node.focus();
 	};
 
 	const renderHero = (element: Element_ | undefined, info: TrackInfo | undefined, queue: redux.PlayQueue) => {
@@ -299,7 +347,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	 * shown in the history there, and requeued when playback returns to it.
 	 */
 	type PlayedQueued = { key: string; mediaItemId: redux.ItemId; context: Element_["context"]; anchor: string; seq: number };
-	type HistoryEntry = { element: Element_; index: number; virtual?: string };
+	type HistoryEntry = ListItem;
 	let playedQueued: PlayedQueued[] = [];
 	let playedSeq = 0;
 	let snapshot: { elements: Element_[]; currentIndex: number } | undefined;
@@ -534,20 +582,13 @@ const createPanel = (unloads: LunaUnloads) => {
 		const played = historyEntries(elements, Math.max(currentIndex, 0));
 		renderRecent(played);
 
-		const used = new Set<string>();
 		panel.dataset.mode = mode;
 		history.root.hidden = mode !== "history";
 		if (mode === "history") {
 			queued.root.hidden = upNext.root.hidden = empty.hidden = true;
 			history.detail.textContent = songCount(played.length);
-			const nodes = played.map(({ element, index, virtual }) => {
-				const node = updateRow(element, index, used);
-				if (virtual) node.dataset.virtual = virtual;
-				else delete node.dataset.virtual;
-				return node;
-			});
-			fillSection(history, nodes, played.map((p) => p.element.uid).join());
-			if (played.length === 0) history.list.replaceChildren(h("p", "oq-empty", "Songs you've played show up here."));
+			setItems(history, played);
+			historyEmpty.hidden = played.length > 0;
 		} else {
 			const upcoming = elements
 				.slice(currentIndex + 1)
@@ -559,10 +600,18 @@ const createPanel = (unloads: LunaUnloads) => {
 			}
 			const fill = (section: Section, items: typeof upcoming) => {
 				section.root.hidden = items.length === 0;
-				const seconds = items.reduce((sum, { element }) => sum + (trackInfo(element.mediaItemId, onLoad)?.duration ?? 0), 0);
-				section.detail.textContent = `${songCount(items.length)}, ${formatLength(seconds)}`;
-				const nodes = items.map(({ element, index }) => updateRow(element, index, used));
-				fillSection(section, nodes, items.map((item) => item.element.uid).join());
+				// Length only once every song is known: looking them all up would load each one from TIDAL
+				let seconds: number | undefined = 0;
+				for (const { element } of items) {
+					const duration = knownTrackInfo(element.mediaItemId)?.duration;
+					if (duration === undefined) {
+						seconds = undefined;
+						break;
+					}
+					seconds += duration;
+				}
+				section.detail.textContent = seconds === undefined ? songCount(items.length) : `${songCount(items.length)}, ${formatLength(seconds)}`;
+				setItems(section, items);
 			};
 			// "Queued by you": the queued songs right after the current one
 			const firstOther = upcoming.findIndex(({ element }) => element.priority !== "priority_keep");
@@ -572,7 +621,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			fill(upNext, firstOther < 0 ? [] : upcoming.slice(firstOther));
 			empty.hidden = upcoming.length > 0;
 		}
-		for (const uid of rows.keys()) if (!used.has(uid)) rows.delete(uid);
+		renderRows();
 		updateScrollbar();
 	};
 
@@ -1250,7 +1299,11 @@ const createPanel = (unloads: LunaUnloads) => {
 		thumb.style.transform = `translateY(${(scrollTop / range) * (height - thumbHeight)}px)`;
 	}
 	scroll.addEventListener("scroll", updateScrollbar, { passive: true });
-	const contentObserver = new ResizeObserver(() => updateScrollbar());
+	scroll.addEventListener("scroll", renderRows, { passive: true });
+	const contentObserver = new ResizeObserver(() => {
+		updateScrollbar();
+		if (open) renderRows();
+	});
 	contentObserver.observe(scroll);
 	for (const child of scroll.children) contentObserver.observe(child);
 
@@ -1546,8 +1599,9 @@ const createPanel = (unloads: LunaUnloads) => {
 			if (element) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
 		} else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
 			e.preventDefault();
-			const all = [...panel.querySelectorAll<HTMLElement>(".oq-section:not([hidden]) .oq-row")];
-			all[all.indexOf(row) + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+			const all = sections.filter((section) => !section.root.hidden).flatMap((section) => section.items.map((item, pos) => ({ section, item, pos })));
+			const next = all[all.findIndex(({ item }) => item.element.uid === row.dataset.uid) + (e.key === "ArrowDown" ? 1 : -1)];
+			if (next) focusRow(next.section, next.pos);
 		} else if (e.key === "ContextMenu") {
 			e.preventDefault();
 			const rect = row.getBoundingClientRect();
@@ -1651,6 +1705,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!drag.active) {
 			if (Math.abs(e.clientY - drag.startY) < 6) return;
 			drag.active = true;
+			draggedUid = drag.row.dataset.uid;
 			panel.setPointerCapture(e.pointerId);
 			drag.row.classList.add("is-dragging");
 			panel.classList.add("is-dragging");
@@ -1662,6 +1717,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!drag || e.pointerId !== drag.pointerId) return;
 		const { active, target, after, from, row } = drag;
 		drag = undefined;
+		draggedUid = undefined;
 		if (!active) return;
 		row.classList.remove("is-dragging");
 		panel.classList.remove("is-dragging");

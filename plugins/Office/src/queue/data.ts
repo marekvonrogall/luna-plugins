@@ -49,15 +49,20 @@ const toInfo = (item: StoredItem): TrackInfo => {
 	return info;
 };
 
+/** Song details if TIDAL (or an earlier lookup) already has them, without loading anything */
+export const knownTrackInfo = (id: redux.ItemId): TrackInfo | undefined => {
+	const key = String(id);
+	const stored = redux.store.getState().content.mediaItems[key]?.item as StoredItem | undefined;
+	return stored !== undefined ? toInfo(stored) : fetched.get(key);
+};
+
 /**
  * Song details from TIDAL's store. Songs TIDAL hasn't loaded are fetched in the background, `onLoad` is called once they arrive.
  */
 export const trackInfo = (id: redux.ItemId, onLoad: () => void): TrackInfo | undefined => {
+	const known = knownTrackInfo(id);
+	if (known !== undefined) return known;
 	const key = String(id);
-	const stored = redux.store.getState().content.mediaItems[key]?.item as StoredItem | undefined;
-	if (stored !== undefined) return toInfo(stored);
-	const cached = fetched.get(key);
-	if (cached !== undefined) return cached;
 	if (!loading.has(key)) {
 		loading.add(key);
 		MediaItem.fromId(id)

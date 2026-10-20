@@ -668,7 +668,14 @@
 	padding-top: 18px;
 }
 .oq-list {
+	position: relative;
 	padding: 0 8px;
+}
+/* Placed by index (only the visible ones exist) */
+.oq-list > .oq-row {
+	position: absolute;
+	left: 8px;
+	right: 8px;
 }
 .oq-row {
 	position: relative;
@@ -681,8 +688,6 @@
 	border-radius: 6px;
 	cursor: default;
 	user-select: none;
-	content-visibility: auto;
-	contain-intrinsic-size: auto 52px;
 }
 .oq-row:hover,
 .oq-row:focus-visible {
