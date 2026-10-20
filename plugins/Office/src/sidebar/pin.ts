@@ -1,6 +1,7 @@
 import type { LunaUnload, LunaUnloads } from "@luna/core";
 import { observe, StyleTag } from "@luna/lib";
 
+import { isCompact } from "../compact";
 import { settings, settingsListeners } from "../Settings";
 
 const PINNED = "data-office-pinned";
@@ -126,8 +127,9 @@ export const setupPinnedSidebar = (unloads: LunaUnloads) => {
 		active = undefined;
 	};
 	const sync = () => {
-		if (settings.pinnedSidebar === (active !== undefined)) return;
-		if (!settings.pinnedSidebar) return disable();
+		const wanted = settings.pinnedSidebar && !isCompact();
+		if (wanted === (active !== undefined)) return;
+		if (!wanted) return disable();
 		active = new Set();
 		pin(active);
 	};

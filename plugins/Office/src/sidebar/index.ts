@@ -6,6 +6,7 @@ import styles from "file://sidebar.css?minify";
 
 import { trace } from "../log";
 import { coverUrl, trackInfo } from "../queue/data";
+import { isCompact } from "../compact";
 import { settings, settingsListeners } from "../Settings";
 import { swapImage } from "../swapImage";
 
@@ -220,8 +221,9 @@ export const setupSidebar = (unloads: LunaUnloads) => {
 		active = undefined;
 	};
 	const sync = () => {
-		if (settings.sidebar === (active !== undefined)) return;
-		if (!settings.sidebar) return disable();
+		const wanted = settings.sidebar && !isCompact();
+		if (wanted === (active !== undefined)) return;
+		if (!wanted) return disable();
 		active = new Set();
 		new StyleTag("Office-sidebar", active, styles);
 		try {

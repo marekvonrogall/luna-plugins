@@ -7,6 +7,7 @@ type Settings = {
 	queue: boolean;
 	queueTint: boolean;
 	dockedPlayer: boolean;
+	playerBar: boolean;
 	sidebar: boolean;
 	sidebarTint: boolean;
 	pinnedSidebar: boolean;
@@ -15,6 +16,7 @@ export const settings = await ReactiveStore.getPluginStorage<Settings>("Office",
 	queue: true,
 	queueTint: true,
 	dockedPlayer: true,
+	playerBar: true,
 	sidebar: true,
 	sidebarTint: false,
 	pinnedSidebar: true,
@@ -32,6 +34,7 @@ export const Settings = () => {
 	const [queue, setQueue] = React.useState(settings.queue);
 	const [queueTint, setQueueTint] = React.useState(settings.queueTint);
 	const [dockedPlayer, setDockedPlayer] = React.useState(settings.dockedPlayer);
+	const [playerBar, setPlayerBar] = React.useState(settings.playerBar);
 	const [sidebar, setSidebar] = React.useState(settings.sidebar);
 	const [sidebarTint, setSidebarTint] = React.useState(settings.sidebarTint);
 	const [pinnedSidebar, setPinnedSidebar] = React.useState(settings.pinnedSidebar);
@@ -65,6 +68,15 @@ export const Settings = () => {
 				checked={dockedPlayer}
 				onChange={(_: unknown, checked: boolean) => {
 					setDockedPlayer((settings.dockedPlayer = checked));
+					changed();
+				}}
+			/>
+			<LunaSwitchSetting
+				title="Redesigned player bar"
+				desc="Replaces TIDAL's player bar with Office's version"
+				checked={playerBar}
+				onChange={(_: unknown, checked: boolean) => {
+					setPlayerBar((settings.playerBar = checked));
 					changed();
 				}}
 			/>

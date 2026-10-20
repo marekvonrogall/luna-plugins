@@ -3,6 +3,7 @@ import { observe, StyleTag } from "@luna/lib";
 
 import styles from "file://player.css?minify";
 
+import { isCompact } from "../compact";
 import { settings, settingsListeners } from "../Settings";
 
 /** TIDAL's veil behind the bar (its first child) */
@@ -46,8 +47,9 @@ export const setupPlayer = (unloads: LunaUnloads) => {
 		active = undefined;
 	};
 	const sync = () => {
-		if (settings.dockedPlayer === (active !== undefined)) return;
-		if (!settings.dockedPlayer) return disable();
+		const wanted = settings.dockedPlayer && !isCompact();
+		if (wanted === (active !== undefined)) return;
+		if (!wanted) return disable();
 		active = new Set();
 		new StyleTag("Office-player", active, styles);
 		let watched: HTMLElement | undefined;

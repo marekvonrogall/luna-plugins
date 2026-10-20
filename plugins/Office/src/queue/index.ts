@@ -4,6 +4,7 @@ import { observe, PlayState, redux, StyleTag } from "@luna/lib";
 import styles from "file://styles.css?minify";
 
 import { trace } from "../log";
+import { isCompact } from "../compact";
 import { settings, settingsListeners } from "../Settings";
 import { artistNames, coverUrl, formatDuration, formatLength, knownTrackInfo, songCount, trackInfo, type TrackInfo } from "./data";
 import { swapImage } from "../swapImage";
@@ -1817,8 +1818,9 @@ export const setupQueue = (unloads: LunaUnloads) => {
 		active = undefined;
 	};
 	const sync = () => {
-		if (settings.queue === (active !== undefined)) return;
-		if (!settings.queue) return disable();
+		const wanted = settings.queue && !isCompact();
+		if (wanted === (active !== undefined)) return;
+		if (!wanted) return disable();
 		active = new Set();
 		// Hides TIDAL's queue but keeps its space
 		new StyleTag("Office-queue", active, `${styles}\n#playQueueSidebar { visibility: hidden !important; }`);
