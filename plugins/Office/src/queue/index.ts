@@ -450,34 +450,34 @@ const createPanel = (unloads: LunaUnloads) => {
 			const replayed = new Set([target.virtual, ...replay.map((entry) => entry.virtual)].filter(Boolean));
 			playedQueued = playedQueued.filter((entry) => !replayed.has(entry.key));
 
+			const currentUid = () => PlayState.playQueue.elements[PlayState.playQueue.currentIndex]?.uid;
 			let targetUid = target.element.uid;
 			if (remembered) {
-				// Gone from TIDAL's queue: re-add it first
-				const elements = PlayState.playQueue.elements;
-				const anchorIndex = elements.findIndex((element) => element.uid === remembered.anchor);
-				if (anchorIndex < 0) return;
-				const known = new Set(elements.map((element) => element.uid));
-				redux.actions["playQueue/ADD_AT_INDEX"]({ index: anchorIndex + 1, mediaItemIds: [remembered.mediaItemId], context: remembered.context });
-				await waitFor(() => PlayState.playQueue.elements.some((element) => !known.has(element.uid)));
-				const added = PlayState.playQueue.elements.find((element) => !known.has(element.uid));
-				if (!added) return;
-				targetUid = added.uid;
+				// Gone from TIDAL's queue: added after the current song and skipped to (TIDAL drops queued songs placed
+				// before the current one, and its ADD_NOW clears up next)
+				const known = new Set(PlayState.playQueue.elements.map((element) => element.uid));
+				redux.actions["playQueue/ADD_NEXT"]({ mediaItemIds: [remembered.mediaItemId], context: remembered.context });
+				const added = () => PlayState.playQueue.elements.findIndex((element) => !known.has(element.uid));
+				await waitFor(() => added() >= 0);
+				const addedIndex = added();
+				if (addedIndex < 0) return;
+				targetUid = PlayState.playQueue.elements[addedIndex].uid;
+				PlayState.moveTo(addedIndex);
+				PlayState.play();
+				await waitFor(() => currentUid() === targetUid);
+			} else {
+				const targetIndex = PlayState.playQueue.elements.findIndex((element) => element.uid === targetUid);
+				if (targetIndex < 0) return;
+				PlayState.moveTo(targetIndex);
+				PlayState.play();
+				await waitFor(() => currentUid() === targetUid);
 			}
 
-			const targetIndex = PlayState.playQueue.elements.findIndex((element) => element.uid === targetUid);
-			if (targetIndex < 0) return;
-			PlayState.moveTo(targetIndex);
-			PlayState.play();
-			await waitFor(() => PlayState.playQueue.elements[PlayState.playQueue.currentIndex]?.uid === targetUid);
-
-			// TIDAL's own copies coming up are replaced by the "Queued by you" ones
+			// TIDAL's own copies (coming up, or behind a replayed remembered song) make way for the "Queued by you" ones
 			const tidalUids = new Set(replay.filter((entry) => !entry.virtual).map((entry) => entry.element.uid));
-			const comingUp = () => {
-				const { elements, currentIndex } = PlayState.playQueue;
-				return elements.filter((element, index) => index > currentIndex && tidalUids.has(element.uid));
-			};
-			for (const element of comingUp()) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
-			await waitFor(() => comingUp().length === 0);
+			const stale = () => PlayState.playQueue.elements.filter((element) => element.uid !== targetUid && tidalUids.has(element.uid));
+			for (const element of stale()) redux.actions["playQueue/REMOVE_ELEMENT"]({ uid: element.uid });
+			await waitFor(() => stale().length === 0);
 
 			if (replay.length > 0) {
 				const length = PlayState.playQueue.elements.length;
@@ -501,22 +501,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const anchor = elements[currentIndex - 1];
 		const entry = anchor && playedQueued.filter((played) => played.anchor === anchor.uid).sort((a, b) => a.seq - b.seq).pop();
 		if (replaying || !entry) return false;
-		replaying = true;
-		playedQueued = playedQueued.filter((played) => played !== entry);
-		setTimeout(async () => {
-			try {
-				const known = new Set(elements.map((element) => element.uid));
-				redux.actions["playQueue/ADD_AT_INDEX"]({ index: currentIndex, mediaItemIds: [entry.mediaItemId], context: entry.context });
-				await waitFor(() => PlayState.playQueue.elements.some((element) => !known.has(element.uid)));
-				const index = PlayState.playQueue.elements.findIndex((element) => !known.has(element.uid));
-				if (index < 0) return;
-				PlayState.moveTo(index);
-				PlayState.play();
-				await waitFor(() => PlayState.playQueue.currentIndex === index);
-			} finally {
-				settle();
-			}
-		});
+		setTimeout(() => replayFrom(entry.key));
 		return true;
 	};
 	redux.intercept("playQueue/MOVE_PREVIOUS", unloads, () => backToRemembered() || undefined);
