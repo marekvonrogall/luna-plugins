@@ -30,6 +30,7 @@ type StoredItem = {
 const infoOf = new WeakMap<object, TrackInfo>();
 const fetched = new Map<string, TrackInfo>();
 const loading = new Set<string>();
+const failures = new Map<string, number>();
 
 const toInfo = (item: StoredItem): TrackInfo => {
 	let info = infoOf.get(item);
@@ -65,12 +66,23 @@ export const trackInfo = (id: redux.ItemId, onLoad: () => void): TrackInfo | und
 	const key = String(id);
 	if (!loading.has(key)) {
 		loading.add(key);
+		// Failed lookups are retried a few times, a bit later
+		const retry = () => {
+			const tries = (failures.get(key) ?? 0) + 1;
+			failures.set(key, tries);
+			if (tries < 3)
+				setTimeout(() => {
+					loading.delete(key);
+					onLoad();
+				}, 3000 * tries);
+		};
 		MediaItem.fromId(id)
 			.then((mediaItem) => {
-				if (mediaItem !== undefined) fetched.set(key, toInfo(mediaItem.tidalItem as unknown as StoredItem));
+				if (mediaItem === undefined) return retry();
+				fetched.set(key, toInfo(mediaItem.tidalItem as unknown as StoredItem));
 				onLoad();
 			})
-			.catch(() => {});
+			.catch(retry);
 	}
 	return undefined;
 };

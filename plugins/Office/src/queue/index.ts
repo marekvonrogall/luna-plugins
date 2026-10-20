@@ -56,7 +56,7 @@ const play = (index: number) => {
 
 const tidalAside = () => document.getElementById("playQueueSidebar");
 
-const swapImage = (container: HTMLElement, url: string | undefined, state: { url?: string }) => {
+const swapImage = (container: HTMLElement, url: string | undefined, state: { url?: string }, onFail?: () => void) => {
 	if (url === state.url) return;
 	state.url = url;
 	if (url === undefined) {
@@ -71,9 +71,15 @@ const swapImage = (container: HTMLElement, url: string | undefined, state: { url
 		if (state.url !== url) return;
 		container.appendChild(img);
 		requestAnimationFrame(() => img.classList.add("is-in"));
+		// Only older images go: a newer one may have arrived meanwhile
 		setTimeout(() => {
-			for (const old of [...container.children]) if (old !== img) old.remove();
+			while (img.isConnected && img.previousElementSibling) img.previousElementSibling.remove();
 		}, 700);
+	};
+	img.onerror = () => {
+		if (state.url !== url) return;
+		state.url = undefined;
+		setTimeout(() => onFail?.(), 2000);
 	};
 	img.src = url;
 };
@@ -315,8 +321,8 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 
 		const cover = coverUrl(info, panel.clientWidth * window.devicePixelRatio > 640 ? "1280" : "640");
-		swapImage(heroCovers, cover, heroState);
-		swapImage(ambient, coverUrl(info, "320"), ambientState);
+		swapImage(heroCovers, cover, heroState, schedule);
+		swapImage(ambient, coverUrl(info, "320"), ambientState, schedule);
 
 		heroTitle.textContent = element === undefined ? "Nothing playing" : (info?.title ?? "");
 		if (info) heroTitle.setAttribute("href", `/track/${info.id}`);
@@ -434,9 +440,9 @@ const createPanel = (unloads: LunaUnloads) => {
 		});
 
 	/** Plays a history song in one jump; what played after it, and the current song, follow as "Queued by you" */
-	let replaying = false;
+	/** Replays in progress (or settling): TIDAL's queue changes meanwhile aren't plays */
+	let replaying = 0;
 	const replayFrom = async (uid: string) => {
-		if (replaying) return;
 		const queue = PlayState.playQueue;
 		const history = historyEntries(queue.elements, queue.currentIndex).reverse();
 		const position = history.findIndex(({ element }) => element.uid === uid);
@@ -445,7 +451,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const current = queue.elements[queue.currentIndex];
 		const replay: HistoryEntry[] = [...history.slice(position + 1), ...(current ? [{ element: current, index: queue.currentIndex }] : [])];
 		const remembered = target.virtual ? playedQueued.find((entry) => entry.key === target.virtual) : undefined;
-		replaying = true;
+		replaying++;
 		try {
 			const replayed = new Set([target.virtual, ...replay.map((entry) => entry.virtual)].filter(Boolean));
 			playedQueued = playedQueued.filter((entry) => !replayed.has(entry.key));
@@ -491,25 +497,68 @@ const createPanel = (unloads: LunaUnloads) => {
 	// TIDAL may still be settling; don't count that as plays
 	const settle = () =>
 		setTimeout(() => {
-			replaying = false;
-			snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
+			if (--replaying === 0) snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
 		}, 800);
 
+	/** Play requests run one at a time; while one runs, only the latest click waits (fast clicking ends on the last one) */
+	let running = false;
+	let nextTask: (() => Promise<unknown> | void) | undefined;
+	const runLatest = (task: () => Promise<unknown> | void) => {
+		nextTask = task;
+		if (running) return;
+		running = true;
+		void (async () => {
+			while (nextTask) {
+				const task = nextTask;
+				nextTask = undefined;
+				try {
+					await task();
+				} catch (err) {
+					trace.msg.err.withContext("Couldn't play the song")(err as Error);
+				}
+			}
+			running = false;
+		})();
+	};
+
 	/** Going back from the song after an anchor plays its last remembered song, not the anchor (TIDAL's pick) */
-	const backToRemembered = () => {
+	const rememberedBefore = () => {
 		const { elements, currentIndex } = PlayState.playQueue;
 		const anchor = elements[currentIndex - 1];
-		const entry = anchor && playedQueued.filter((played) => played.anchor === anchor.uid).sort((a, b) => a.seq - b.seq).pop();
-		if (replaying || !entry) return false;
-		setTimeout(() => replayFrom(entry.key));
+		return anchor && playedQueued.filter((played) => played.anchor === anchor.uid).sort((a, b) => a.seq - b.seq).pop();
+	};
+	let ownPrevious = false;
+	const backToRemembered = () => {
+		if (ownPrevious || (!running && !rememberedBefore())) return false;
+		// Waits for a running request, then decides on the queue as it is by then
+		runLatest(async () => {
+			const entry = rememberedBefore();
+			if (entry) return replayFrom(entry.key);
+			const before = PlayState.playQueue.currentIndex;
+			ownPrevious = true;
+			try {
+				redux.actions["playQueue/MOVE_PREVIOUS"]();
+			} finally {
+				ownPrevious = false;
+			}
+			await waitFor(() => PlayState.playQueue.currentIndex !== before, 1000);
+		});
 		return true;
 	};
 	redux.intercept("playQueue/MOVE_PREVIOUS", unloads, () => backToRemembered() || undefined);
+	/** By uid, looked up when it runs: positions shift while TIDAL updates the queue */
 	const playEntry = (node: HTMLElement) => {
 		const uid = node.dataset.uid;
-		const index = Number(node.dataset.index);
-		if (uid && (node.dataset.virtual || index < PlayState.playQueue.currentIndex)) replayFrom(uid);
-		else play(index);
+		const virtual = node.dataset.virtual;
+		if (!uid) return;
+		runLatest(async () => {
+			const { elements, currentIndex } = PlayState.playQueue;
+			const index = elements.findIndex((element) => element.uid === uid);
+			if (virtual || (index >= 0 && index < currentIndex)) return replayFrom(uid);
+			if (index < 0) return;
+			play(index);
+			await waitFor(() => PlayState.playQueue.elements[PlayState.playQueue.currentIndex]?.uid === uid, 1500);
+		});
 	};
 	// #endregion
 
