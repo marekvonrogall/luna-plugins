@@ -578,6 +578,18 @@ const createPanel = (unloads: LunaUnloads) => {
 	 * and the page underneath stays below.
 	 */
 	const searchBlock = h("div", "oq-block oq-search-block");
+	let viewAllClasses = { row: "_viewAllResultsContainer_515a3d8", text: "wave-text-description-demi _viewAllResultsText_e3ba23a" };
+	const searchHint = h("div");
+	const searchHintText = h("span", undefined, "Type to search songs, artists and more");
+	searchHintText.dataset.waveColor = "textDefault";
+	searchHintText.dataset.waveNumberOfLines = "1";
+	searchHint.appendChild(h("div")).appendChild(searchHintText);
+	const styleSearchHint = () => {
+		searchHint.className = `oq-search-hint ${viewAllClasses.row}`;
+		searchHintText.className = viewAllClasses.text;
+	};
+	styleSearchHint();
+	searchBlock.appendChild(searchHint);
 	// Zero-size marker at 0,0 next to the blocks (they slide, so they can't measure themselves)
 	const blockProbe = h("i", "oq-probe");
 	for (const block of [searchBlock, blockProbe]) block.setAttribute("aria-hidden", "true");
@@ -715,6 +727,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			for (const prop of POPOVER_STYLES) styledPopover.style.removeProperty(prop);
 		}
 		for (const prop of ["top", "height", "max-height"]) fittedList?.style.removeProperty(prop);
+		unfitRows();
 		listObserver.disconnect();
 		styledPopover = fittedList = undefined;
 	};
@@ -756,6 +769,35 @@ const createPanel = (unloads: LunaUnloads) => {
 		cancelAnimationFrame(easeFrame);
 	});
 
+	/**
+	 * Some of TIDAL's rows are made for its wider popup and stick out past the list (getting cut off, with their buttons).
+	 * Only those are pulled back in, the rest keeps the full width.
+	 */
+	const fittedRows = new Set<HTMLElement>();
+	const unfitRows = () => {
+		for (const row of fittedRows) {
+			row.style.removeProperty("max-width");
+			row.style.removeProperty("margin-right");
+		}
+		fittedRows.clear();
+	};
+	const fitRows = (list: HTMLElement) => {
+		const limit = list.getBoundingClientRect().right + 0.5;
+		const walk = (parent: Element, depth: number) => {
+			for (const child of parent.children) {
+				if (!(child instanceof HTMLElement) || child.getBoundingClientRect().right <= limit) continue;
+				if (!fittedRows.has(child)) {
+					child.style.setProperty("max-width", "100%", "important");
+					child.style.setProperty("margin-right", "0", "important");
+					fittedRows.add(child);
+				}
+				// Still sticking out: something inside it does
+				if (depth < 6 && child.getBoundingClientRect().right > limit) walk(child, depth + 1);
+			}
+		};
+		walk(list, 0);
+	};
+
 	/** `listTop`: where TIDAL's list inside starts, below the search bar */
 	const stylePopover = (popover: HTMLElement, left: number, top: number, width: number, height: number, listTop: number) => {
 		if (popover !== styledPopover) unstylePopover();
@@ -773,6 +815,14 @@ const createPanel = (unloads: LunaUnloads) => {
 		list.style.setProperty("top", `${listTop}px`, "important");
 		list.style.setProperty("height", "auto", "important");
 		list.style.setProperty("max-height", `calc(100% - ${listTop}px)`, "important");
+		fitRows(list);
+		// Remember how TIDAL styles its "View all results for …" row, for the hint
+		const viewAll = list.querySelector<HTMLElement>('[data-test="view-all-results"]');
+		const viewAllText = viewAll?.querySelector("span");
+		if (viewAll && viewAllText && (viewAll.className !== viewAllClasses.row || viewAllText.className !== viewAllClasses.text)) {
+			viewAllClasses = { row: viewAll.className, text: viewAllText.className };
+			styleSearchHint();
+		}
 		return list.getBoundingClientRect();
 	};
 
@@ -985,8 +1035,12 @@ const createPanel = (unloads: LunaUnloads) => {
 			const headerBottom = document.getElementById("mainHeader")?.getBoundingClientRect().bottom ?? top;
 			const listTop = Math.max(0, (queueTop || headerBottom) - top);
 			const list = stylePopover(popover, searchLeft, top, width, bottom - top, listTop);
+			// Nothing from TIDAL yet: a hint instead, and only as tall as that
+			const empty = !list || list.height < 1 || popover.firstElementChild?.childElementCount === 0;
+			searchHint.hidden = !empty;
+			searchHint.style.top = `${listTop}px`;
 			// Shorter when there are only a few results
-			const blockBottom = list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
+			const blockBottom = empty ? top + listTop + searchHint.offsetHeight : list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
 			setBox(searchBlock, searchLeft, top, width, blockBottom - top, origin);
 		} else unstylePopover();
 		cutQueueOut(searching ? document.querySelector<HTMLElement>(BACKDROP) : null, queueRect && open ? panel.getBoundingClientRect() : undefined);

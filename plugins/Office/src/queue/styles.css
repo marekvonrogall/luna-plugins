@@ -59,6 +59,21 @@
 	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 	transition-duration: 0.15s;
 }
+/* Looks like TIDAL's "View all results for …" row (its classes), only placed by us */
+.oq-search-hint {
+	position: absolute !important;
+	left: 0 !important;
+	right: 0 !important;
+	box-sizing: border-box;
+	margin: 0 !important;
+}
+.oq-search-hint[hidden] {
+	display: none;
+}
+/* Less space above "Recent Searches" */
+.oq-search-popover [class^="_recentSearches"] {
+	padding-top: 10px !important;
+}
 /* TIDAL's search results: the box is the search block, only TIDAL's own list inside scrolls */
 .oq-search-popover {
 	position: fixed !important;
@@ -105,6 +120,12 @@
 .oq-search-popover > * {
 	pointer-events: auto !important;
 	box-sizing: border-box !important;
+	/* Exactly as wide as the search block (TIDAL's list is made for its own, wider popup) */
+	left: 0 !important;
+	right: auto !important;
+	width: 100% !important;
+	min-width: 0 !important;
+	max-width: 100% !important;
 	min-height: 0 !important;
 	/* Fills the block and scrolls (without a scrollbar running behind the search bar) */
 	overflow-x: hidden !important;
