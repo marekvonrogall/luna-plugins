@@ -11,6 +11,8 @@
 	--osb-line: rgba(255, 255, 255, 0.06);
 	--osb-base: #141416;
 	--osb-top: #18181b;
+	/* Top section, as tall as the queue's */
+	--osb-head: 60px;
 	/* Positions come from padding only, so nothing moves when collapsing. Gutter: highlight to sidebar edge */
 	--osb-gutter: 10px;
 	--osb-icon-x: 25px;
@@ -24,6 +26,36 @@
 	color: var(--osb-text);
 	background: var(--osb-base);
 	border-radius: 0;
+	/* Keeps the cover tint (z-index -1) above the background */
+	isolation: isolate;
+}
+/* Cover tint, like the queue's */
+#sidebar > .osb-ambient {
+	position: absolute;
+	inset: 0;
+	top: var(--osb-head);
+	z-index: -1;
+	overflow: hidden;
+	pointer-events: none;
+}
+#sidebar > .osb-ambient img {
+	position: absolute;
+	inset: -25%;
+	width: 150%;
+	height: 150%;
+	object-fit: cover;
+	filter: blur(70px) saturate(1.6) brightness(0.6);
+	opacity: 0;
+	transition: opacity 0.7s ease;
+}
+#sidebar > .osb-ambient img.is-in {
+	opacity: 0.85;
+}
+#sidebar > .osb-ambient::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(180deg, rgba(14, 14, 16, 0.2) 0%, rgba(14, 14, 16, 0.6) 40%, rgba(14, 14, 16, 0.84) 100%);
 }
 /* Right edge, mirroring the queue's */
 #sidebar::after {
@@ -69,6 +101,29 @@
 	flex: none;
 	margin: 0;
 }
+/* Collapsed, the logo is the expand button: round like the collapse button */
+#sidebar [data-test="sidebar-expand"] {
+	position: relative;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: 50%;
+	/* TIDAL shows a resize cursor here */
+	cursor: pointer !important;
+	transition: background 0.15s;
+}
+#sidebar [data-test="sidebar-expand"]:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+#sidebar [data-test="sidebar-expand"] > svg {
+	position: absolute;
+	inset: 0;
+	width: 16px;
+	height: 16px;
+	margin: auto;
+}
 /* Also while TIDAL disables it (full-screen view open) */
 #sidebar:not(:has([data-test="sidebar-expand"])) [data-test="sidebar-collapse"] {
 	display: grid;
@@ -102,7 +157,7 @@
 	width: 16px;
 	height: 16px;
 }
-#sidebar :is([data-test="sidebar-logo"], [data-test="sidebar-expand"]) {
+#sidebar [data-test="sidebar-logo"] {
 	border-radius: 8px;
 }
 /* #endregion */

@@ -5,7 +5,9 @@ import { observe, PlayState, redux, StyleTag } from "@luna/lib";
 import styles from "file://sidebar.css?minify";
 
 import { trace } from "../log";
+import { coverUrl, trackInfo } from "../queue/data";
 import { settings, settingsListeners } from "../Settings";
+import { swapImage } from "../swapImage";
 
 /** Set by us, not TIDAL, so they survive its re-renders */
 const CURRENT = "data-office-current";
@@ -100,6 +102,19 @@ const attach = (unloads: LunaUnloads) => {
 	bars.className = "osb-bars";
 	bars.setAttribute("aria-hidden", "true");
 	bars.append(...Array.from({ length: 3 }, () => document.createElement("i")));
+	const ambient = document.createElement("div");
+	ambient.className = "osb-ambient";
+	ambient.setAttribute("aria-hidden", "true");
+	const ambientState: { url?: string } = {};
+
+	/** The current song's cover behind the sidebar, like the queue's */
+	const tint = () => {
+		if (!aside || !settings.sidebarTint) return ambient.remove();
+		if (ambient.parentElement !== aside) aside.append(ambient);
+		const queue = PlayState.playQueue;
+		const current = queue?.elements?.[queue.currentIndex];
+		swapImage(ambient, coverUrl(current ? trackInfo(current.mediaItemId, schedule) : undefined, "320"), ambientState, schedule);
+	};
 
 	const mark = () => {
 		frame = 0;
@@ -116,6 +131,7 @@ const attach = (unloads: LunaUnloads) => {
 		if (!playingRow) bars.remove();
 		else if (bars.parentElement !== playingRow) playingRow.append(bars);
 		for (const svg of aside.querySelectorAll<SVGSVGElement>(FIT_ICONS)) fitIcon(svg);
+		tint();
 		const menu = aside.querySelector('[data-test="sidebar-collection-menu"]');
 		if (menu) setAttr(menu, CURRENT, isCurrent("/my-collection", path) ? "" : null);
 		updateStuck();
@@ -134,23 +150,13 @@ const attach = (unloads: LunaUnloads) => {
 		}
 	};
 
-	/** Top section as tall as TIDAL's header, like the queue's */
-	const measureHead = () => {
-		if (!aside?.isConnected) return;
-		const header = document.getElementById("mainHeader")?.getBoundingClientRect();
-		const height = header && header.height > 0 ? Math.round(header.bottom - aside.getBoundingClientRect().top) : 0;
-		if (height >= 32 && height <= 160) aside.style.setProperty("--osb-head", `${height}px`);
-		else aside.style.removeProperty("--osb-head");
-	};
-
 	const contentObserver = new MutationObserver(schedule);
-	const resizeObserver = new ResizeObserver(measureHead);
 	const onScroll = () => updateStuck();
 
 	const release = () => {
 		contentObserver.disconnect();
-		resizeObserver.disconnect();
 		bars.remove();
+		ambient.remove();
 		if (!aside) return;
 		aside.removeEventListener("scroll", onScroll, true);
 		aside.removeEventListener("pointerover", schedule);
@@ -160,7 +166,6 @@ const attach = (unloads: LunaUnloads) => {
 			node.removeAttribute(STUCK);
 		}
 		for (const svg of aside.querySelectorAll<SVGElement>(`[${FITTED}]`)) unfitIcon(svg);
-		aside.style.removeProperty("--osb-head");
 		if (positioned) aside.style.removeProperty("position");
 		aside = undefined;
 		positioned = false;
@@ -174,24 +179,15 @@ const attach = (unloads: LunaUnloads) => {
 		positioned = getComputedStyle(node).position === "static";
 		if (positioned) node.style.position = "relative";
 		contentObserver.observe(node, { childList: true, subtree: true, attributes: true, attributeFilter: ["href"] });
-		resizeObserver.observe(node);
-		const header = document.getElementById("mainHeader");
-		if (header) resizeObserver.observe(header);
 		node.addEventListener("scroll", onScroll, { capture: true, passive: true });
 		// Fits icons in menus shown on hover
 		node.addEventListener("pointerover", schedule, { passive: true });
-		measureHead();
 		mark();
 	};
 
 	const existing = document.getElementById("sidebar");
 	if (existing) watch(existing);
 	observe<HTMLElement>(unloads, "#sidebar", watch);
-	observe<HTMLElement>(unloads, "#mainHeader", (header) => {
-		resizeObserver.observe(header);
-		measureHead();
-	});
-	window.addEventListener("resize", measureHead);
 
 	let lastPath: unknown;
 	let lastQueue: unknown;
@@ -206,9 +202,11 @@ const attach = (unloads: LunaUnloads) => {
 		schedule();
 	});
 
+	settingsListeners.add(schedule);
+
 	unloads.add(() => {
+		settingsListeners.delete(schedule);
 		unsubscribe();
-		window.removeEventListener("resize", measureHead);
 		if (frame) cancelAnimationFrame(frame);
 		release();
 	});
