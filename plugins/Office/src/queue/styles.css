@@ -67,6 +67,12 @@
 	box-sizing: border-box;
 	margin: 0 !important;
 }
+/* Until TIDAL's row has been seen; zero specificity so its classes win */
+:where(.oq-search-hint) {
+	display: flex;
+	align-items: center;
+	padding: 12px 16px;
+}
 .oq-search-hint[hidden] {
 	display: none;
 }
@@ -101,12 +107,12 @@
 	display: none;
 }
 /* Full-screen view buttons (Similar tracks, Credits, Lyrics…): a bit tighter, so they fit above the queue */
-[data-test="new-now-playing"] > header > div[class^="_buttons"],
-[data-test="new-now-playing"] > header > div[class^="_buttons"] > * {
+.oq-fs-buttons,
+.oq-fs-buttons > * {
 	column-gap: 0.3em !important;
 	gap: 0.3em !important;
 }
-[data-test="new-now-playing"] > header > div[class^="_buttons"] button:not([class*="_iconOnly"]) {
+.oq-fs-buttons :is([data-test="toggle-similar-tracks"], [data-test="toggle-credits"], [data-test="toggle-lyrics"], .oq-lyrics-missing) {
 	padding-left: 0.85em !important;
 	padding-right: 0.85em !important;
 }

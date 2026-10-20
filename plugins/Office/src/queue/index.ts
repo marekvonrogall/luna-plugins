@@ -55,7 +55,6 @@ const play = (index: number) => {
 
 const tidalAside = () => document.getElementById("playQueueSidebar");
 
-/** Fades a new image in over the old ones once it has loaded */
 const swapImage = (container: HTMLElement, url: string | undefined, state: { url?: string }) => {
 	if (url === state.url) return;
 	state.url = url;
@@ -104,7 +103,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	const panel = h("div", "oq-panel");
 	panel.setAttribute("role", "complementary");
 	panel.setAttribute("aria-label", "Play queue");
-	// Zero-size sibling at 0,0 to find the panel's containing block (in case an ancestor is transformed)
+	// Finds the panel's containing block (an ancestor may be transformed)
 	const probe = h("i", "oq-probe");
 	probe.setAttribute("aria-hidden", "true");
 	const ambient = h("div", "oq-ambient");
@@ -176,12 +175,11 @@ const createPanel = (unloads: LunaUnloads) => {
 	const empty = h("p", "oq-empty", "Nothing is up next. Songs you play or add to the queue show up here.");
 
 	scroll.append(hero, recent, queued.root, upNext.root, history.root, empty);
-	// Own scrollbar: floats over the list (no layout jump when it appears/disappears) and never covers the big cover
+	// Floats over the list, so it doesn't shift the layout
 	const scrollbar = h("div", "oq-scrollbar");
 	const thumb = h("div", "oq-thumb");
 	scrollbar.appendChild(thumb);
-	// Top section of the queue, up to the title bar: behind TIDAL's header (search bar, profile picture), and in the
-	// full-screen view it shows that view's buttons (TIDAL's own are under the queue there)
+	// Behind TIDAL's header; in the full-screen view it holds that view's buttons
 	const cap = h("div", "oq-cap");
 	const capButtons = h("div", "oq-cap-buttons");
 	cap.appendChild(capButtons);
@@ -199,9 +197,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	};
 
 	const rows = new Map<string, Row>();
-	/** Songs in the "Queued by you" section */
 	let queuedUids = new Set<string>();
-	/** Songs being cleared, hidden until TIDAL has removed them */
+	/** Hidden until TIDAL has removed them */
 	const removing = new Set<string>();
 	const stripItems = new Map<string, HTMLButtonElement>();
 
@@ -252,7 +249,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		return row.node;
 	};
 
-	/** Only moves rows around when the order changed */
+	/** Only touches the DOM when the order changed */
 	const fillSection = (section: Section, nodes: HTMLElement[], order: string) => {
 		if (section.order === order && section.list.childElementCount === nodes.length) return;
 		section.order = order;
@@ -298,9 +295,8 @@ const createPanel = (unloads: LunaUnloads) => {
 
 	// #region Played "Queued by you" songs
 	/**
-	 * TIDAL drops "Play next"/"Add to queue" songs from the queue once they're played or skipped. Office remembers them
-	 * with the song they came after (their "anchor"), shows them in the history there, and puts them back into the queue
-	 * when playback goes back to that song.
+	 * TIDAL drops played "Queued by you" songs. They're kept with the song they followed (their anchor),
+	 * shown in the history there, and requeued when playback returns to it.
 	 */
 	type PlayedQueued = { key: string; mediaItemId: redux.ItemId; context: Element_["context"]; anchor: string; seq: number };
 	type HistoryEntry = { element: Element_; index: number; virtual?: string };
@@ -308,7 +304,6 @@ const createPanel = (unloads: LunaUnloads) => {
 	let playedSeq = 0;
 	let snapshot: { elements: Element_[]; currentIndex: number } | undefined;
 
-	/** Puts remembered songs back into the queue, right after their anchors */
 	const requeue = (entries: PlayedQueued[]) => {
 		const { elements, currentIndex } = PlayState.playQueue;
 		const groups = new Map<string, PlayedQueued[]>();
@@ -326,7 +321,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	};
 
-	/** Compares the queue with the last one: which queued songs did TIDAL drop after playing or skipping them? */
+	/** Finds queued songs TIDAL dropped after playing or skipping them */
 	const trackPlayedQueued = (queue: redux.PlayQueue) => {
 		const previous = snapshot;
 		snapshot = { elements: queue.elements, currentIndex: queue.currentIndex };
@@ -338,7 +333,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const newCurrentWasAt = newCurrent ? previous.elements.findIndex((element) => element.uid === newCurrent.uid) : -1;
 		previous.elements.forEach((element, index) => {
 			if (element.priority !== "priority_keep" || present.has(element.uid)) return;
-			// Played (it was the current song) or skipped over; not removed by hand from what's coming up
+			// Played or skipped, not removed by hand
 			const passed = index <= previous.currentIndex || (moved && newCurrentWasAt > index);
 			if (!passed) return;
 			let anchor: string | undefined;
@@ -351,9 +346,9 @@ const createPanel = (unloads: LunaUnloads) => {
 			playedSeq++;
 			playedQueued.push({ key: `played-${playedSeq}`, mediaItemId: element.mediaItemId, context: element.context, anchor, seq: playedSeq });
 		});
-		// Forget songs whose place in the history is gone (queue replaced or cleared)
+		// Anchor gone (queue replaced or cleared)
 		playedQueued = playedQueued.filter((entry) => present.has(entry.anchor)).slice(-100);
-		// Playback went back to (or before) their place: back into the queue
+		// Playback returned to their anchor
 		const back = playedQueued.filter((entry) => queue.elements.findIndex((element) => element.uid === entry.anchor) >= queue.currentIndex);
 		if (back.length > 0) {
 			playedQueued = playedQueued.filter((entry) => !back.includes(entry));
@@ -361,7 +356,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	};
 
-	/** History, most recent first, with the remembered songs at their places */
+	/** Most recent first, remembered songs included */
 	const historyEntries = (elements: Element_[], currentIndex: number): HistoryEntry[] => {
 		const entries: HistoryEntry[] = [];
 		for (let index = 0; index < currentIndex; index++) {
@@ -373,7 +368,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		return entries.reverse();
 	};
 
-	/** Resolves once the store passes `check` (or after `timeout`): TIDAL finishes some queue changes with a delay */
+	/** Resolves once `check` passes or after `timeout` (TIDAL finishes some queue changes late) */
 	const waitFor = (check: () => boolean, timeout = 2500) =>
 		new Promise<boolean>((resolve) => {
 			if (check()) return resolve(true);
@@ -390,10 +385,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			});
 		});
 
-	/**
-	 * Plays a song from the history (TIDAL's or remembered) with one jump. Everything that played after it, and the song
-	 * that was playing, follows as "Queued by you" in that order, ahead of what was already queued.
-	 */
+	/** Plays a history song in one jump; what played after it, and the current song, follow as "Queued by you" */
 	let replaying = false;
 	const replayFrom = async (uid: string) => {
 		if (replaying) return;
@@ -407,13 +399,12 @@ const createPanel = (unloads: LunaUnloads) => {
 		const remembered = target.virtual ? playedQueued.find((entry) => entry.key === target.virtual) : undefined;
 		replaying = true;
 		try {
-			// They're coming up again now
 			const replayed = new Set([target.virtual, ...replay.map((entry) => entry.virtual)].filter(Boolean));
 			playedQueued = playedQueued.filter((entry) => !replayed.has(entry.key));
 
 			let targetUid = target.element.uid;
 			if (remembered) {
-				// Not in TIDAL's queue anymore: back in at its place first
+				// Gone from TIDAL's queue: re-add it first
 				const elements = PlayState.playQueue.elements;
 				const anchorIndex = elements.findIndex((element) => element.uid === remembered.anchor);
 				if (anchorIndex < 0) return;
@@ -431,7 +422,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			PlayState.play();
 			await waitFor(() => PlayState.playQueue.elements[PlayState.playQueue.currentIndex]?.uid === targetUid);
 
-			// TIDAL keeps its own songs as coming up again: they're replaced by the "Queued by you" ones
+			// TIDAL's own copies coming up are replaced by the "Queued by you" ones
 			const tidalUids = new Set(replay.filter((entry) => !entry.virtual).map((entry) => entry.element.uid));
 			const comingUp = () => {
 				const { elements, currentIndex } = PlayState.playQueue;
@@ -446,7 +437,7 @@ const createPanel = (unloads: LunaUnloads) => {
 				await waitFor(() => PlayState.playQueue.elements.length >= length + replay.length);
 			}
 		} finally {
-			// TIDAL may still be settling: don't treat that as songs being played
+			// TIDAL may still be settling; don't count that as plays
 			setTimeout(() => {
 				replaying = false;
 				snapshot = { elements: PlayState.playQueue.elements, currentIndex: PlayState.playQueue.currentIndex };
@@ -545,7 +536,7 @@ const createPanel = (unloads: LunaUnloads) => {
 				const nodes = items.map(({ element, index }) => updateRow(element, index, used));
 				fillSection(section, nodes, items.map((item) => item.element.uid).join());
 			};
-			// In play order: "Queued by you" is the run of queued songs right after the current one
+			// "Queued by you": the queued songs right after the current one
 			const firstOther = upcoming.findIndex(({ element }) => element.priority !== "priority_keep");
 			const queuedItems = firstOther < 0 ? upcoming : upcoming.slice(0, firstOther);
 			queuedUids = new Set(queuedItems.map(({ element }) => element.uid));
@@ -572,30 +563,36 @@ const createPanel = (unloads: LunaUnloads) => {
 	// #endregion
 
 	// #region Placement
-	/**
-	 * Dark blocks behind TIDAL's header: one above the queue (so it seems to run up to the title bar) and one for search results.
-	 * They sit right below whatever TIDAL keeps on top there, so the header (or the full-screen view's buttons) stays above them
-	 * and the page underneath stays below.
-	 */
+	/** Dark blocks behind TIDAL's header (above the queue, and for search results), between the header and the page */
 	const searchBlock = h("div", "oq-block oq-search-block");
-	let viewAllClasses = { row: "_viewAllResultsContainer_515a3d8", text: "wave-text-description-demi _viewAllResultsText_e3ba23a" };
+	/** TIDAL's "View all results" row classes, reused for the hint and remembered across restarts */
+	const VIEW_ALL_KEY = "Office.viewAllClasses";
+	const FALLBACK_VIEW_ALL = { row: "", text: "wave-text-description-demi" };
+	const loadViewAllClasses = (): typeof FALLBACK_VIEW_ALL => {
+		try {
+			const stored = JSON.parse(localStorage.getItem(VIEW_ALL_KEY) ?? "null");
+			if (typeof stored?.row === "string" && typeof stored?.text === "string") return { row: stored.row, text: stored.text };
+		} catch {}
+		return FALLBACK_VIEW_ALL;
+	};
+	let viewAllClasses = loadViewAllClasses();
 	const searchHint = h("div");
 	const searchHintText = h("span", undefined, "Type to search songs, artists and more");
 	searchHintText.dataset.waveColor = "textDefault";
 	searchHintText.dataset.waveNumberOfLines = "1";
 	searchHint.appendChild(h("div")).appendChild(searchHintText);
 	const styleSearchHint = () => {
-		searchHint.className = `oq-search-hint ${viewAllClasses.row}`;
-		searchHintText.className = viewAllClasses.text;
+		searchHint.className = `oq-search-hint ${viewAllClasses.row}`.trim();
+		searchHintText.className = viewAllClasses.text || FALLBACK_VIEW_ALL.text;
 	};
 	styleSearchHint();
 	searchBlock.appendChild(searchHint);
-	// Zero-size marker at 0,0 next to the blocks (they slide, so they can't measure themselves)
+	// Marks 0,0 for the blocks, which slide and can't measure themselves
 	const blockProbe = h("i", "oq-probe");
 	for (const block of [searchBlock, blockProbe]) block.setAttribute("aria-hidden", "true");
 
 	const lifted = new Map<HTMLElement, string>();
-	/** Positions a static element of TIDAL's so it paints above the blocks (doesn't change its layout) */
+	/** Lets a static TIDAL element paint above the blocks without changing its layout */
 	const lift = (node: HTMLElement | null) => {
 		if (!node || lifted.has(node) || node.classList.contains("oq-block") || getComputedStyle(node).position !== "static") return;
 		lifted.set(node, node.style.position);
@@ -615,22 +612,23 @@ const createPanel = (unloads: LunaUnloads) => {
 		);
 	};
 
+	/** Sidebar, page and queue, below the title bar */
+	const mainRow = () =>
+		document.querySelector('[data-test="main-layout-sidebar-wrapper"]')?.parentElement ?? tidalAside()?.parentElement?.parentElement ?? undefined;
+
 	type Anchor = { parent: Element; before: HTMLElement | null; zIndex: string };
-	/** Right below TIDAL's header (in the full-screen view it holds the Similar tracks/Credits/Lyrics buttons) */
+	/** Right below TIDAL's header */
 	const headerAnchor = (): Anchor | undefined => {
 		const header = document.getElementById("mainHeader");
-		const row = header?.closest('div[class^="_containerRow"]');
-		if (!header || !row) return;
+		const row = mainRow();
+		if (!header || !row?.contains(header)) return;
 		let root: HTMLElement = header;
 		for (let node: HTMLElement | null = header; node && node !== row; node = node.parentElement) if (formsStackingContext(node)) root = node;
 		lift(root);
 		const zIndex = getComputedStyle(root).zIndex;
 		return { parent: root.parentElement!, before: root, zIndex: zIndex === "auto" ? "" : zIndex };
 	};
-	/**
-	 * The blocks share the queue's layer (TIDAL keeps the queue above the full-screen view's background), and TIDAL's header
-	 * is lifted one layer above that so its buttons and search bar stay on top
-	 */
+	/** The blocks share the queue's layer; TIDAL's header goes one above */
 	const raised = new Map<HTMLElement, string>();
 	const raiseAbove = (node: HTMLElement, zIndex: number) => {
 		const current = parseInt(getComputedStyle(node).zIndex);
@@ -646,20 +644,15 @@ const createPanel = (unloads: LunaUnloads) => {
 		searchBlock.style.zIndex = zIndex;
 	};
 
-	/** TIDAL's full-screen view (song, lyrics, credits…) when it's showing. TIDAL has two elements with its id: the one on screen is the real view */
+	/** The full-screen view on screen (TIDAL renders two) */
 	const fullscreenView = () => {
 		const probeAt = document.elementFromPoint(window.innerWidth * 0.2, window.innerHeight * 0.5);
 		return probeAt?.closest<HTMLElement>('[data-test="new-now-playing"]') ?? undefined;
 	};
-	const titleBarBottom = () => {
-		const bar = document.querySelector<HTMLElement>('div[class^="_mainContainer"] > div[class^="_bar"]')?.getBoundingClientRect();
-		return bar && bar.height > 0 ? bar.bottom : 0;
-	};
+	/** The title bar, if any, sits right above the main row */
+	const titleBarBottom = () => Math.max(0, mainRow()?.getBoundingClientRect().top ?? 0);
 
-	/**
-	 * Sets a fixed element's box, correcting for ancestors that move fixed elements: by `origin` (where 0,0 ends up),
-	 * or by measuring the element itself.
-	 */
+	/** Sets a fixed element's box, correcting for ancestors that offset fixed positioning */
 	const setBox = (node: HTMLElement, left: number, top: number, width: number, height: number, origin?: DOMRect, important = false) => {
 		const set = (prop: string, value: number) => node.style.setProperty(prop, `${value}px`, important ? "important" : "");
 		set("width", Math.max(0, width));
@@ -676,7 +669,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (Math.abs(actual.top - top) > 0.5) set("top", 2 * top - actual.top);
 	};
 
-	/** The search bar starts `margin` right of `left`, `margin` being the profile picture's distance to the window's right edge */
+	/** Widens the search bar to start at `left`, keeping the profile picture's right margin */
 	const SEARCH_STYLES = ["width", "min-width", "max-width", "flex"] as const;
 	let fittedSearch: HTMLElement | undefined;
 	const unfitSearch = () => {
@@ -690,7 +683,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (search !== fittedSearch) unfitSearch();
 		if (!search || !picture) return;
 		fittedSearch = search;
-		// The field and its cancel button stay clickable above the results box and TIDAL's close-on-click-outside layer
+		// Field and cancel button stay clickable above the results and TIDAL's close layer
 		for (const node of search.querySelectorAll<HTMLElement>(':scope > [data-type="search-field"], :scope > [data-test="search-input-cancel"]')) {
 			lift(node);
 			if (!raised.has(node)) raised.set(node, node.style.zIndex);
@@ -713,12 +706,10 @@ const createPanel = (unloads: LunaUnloads) => {
 		return search.getBoundingClientRect();
 	};
 
-	/** TIDAL's search results, moved into the search block */
 	const POPOVER = '[data-test="search-popover-popover"]';
 	const POPOVER_STYLES = ["left", "top", "width", "height"] as const;
 	let styledPopover: HTMLElement | undefined;
 	let fittedList: HTMLElement | undefined;
-	// The search block follows the list's height as results come and go
 	const listObserver = new ResizeObserver(() => place());
 	unloads.add(() => listObserver.disconnect());
 	const unstylePopover = () => {
@@ -731,10 +722,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		listObserver.disconnect();
 		styledPopover = fittedList = undefined;
 	};
-	/**
-	 * TIDAL blocks wheel scrolling outside where it expects its results. Its blocker doesn't get to see wheel events over the
-	 * results, so the list scrolls natively. If something blocks it anyway, the list is scrolled by hand (eased, like native).
-	 */
+	/** TIDAL blocks wheel scrolling outside its popup; if the results get blocked too, they're scrolled by hand */
 	let easeTarget = 0;
 	let easeFrame = 0;
 	let easeList: HTMLElement | undefined;
@@ -769,10 +757,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		cancelAnimationFrame(easeFrame);
 	});
 
-	/**
-	 * Some of TIDAL's rows are made for its wider popup and stick out past the list (getting cut off, with their buttons).
-	 * Only those are pulled back in, the rest keeps the full width.
-	 */
+	/** Pulls in rows made for TIDAL's wider popup that would stick out */
 	const fittedRows = new Set<HTMLElement>();
 	const unfitRows = () => {
 		for (const row of fittedRows) {
@@ -791,14 +776,14 @@ const createPanel = (unloads: LunaUnloads) => {
 					child.style.setProperty("margin-right", "0", "important");
 					fittedRows.add(child);
 				}
-				// Still sticking out: something inside it does
+				// Still sticking out: it's something inside
 				if (depth < 6 && child.getBoundingClientRect().right > limit) walk(child, depth + 1);
 			}
 		};
 		walk(list, 0);
 	};
 
-	/** `listTop`: where TIDAL's list inside starts, below the search bar */
+	/** `listTop`: where TIDAL's list starts, below the search bar */
 	const stylePopover = (popover: HTMLElement, left: number, top: number, width: number, height: number, listTop: number) => {
 		if (popover !== styledPopover) unstylePopover();
 		styledPopover = popover;
@@ -811,26 +796,26 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 		fittedList = list ?? undefined;
 		if (!list) return;
-		// As tall as its content, at most down to the end of the block
 		list.style.setProperty("top", `${listTop}px`, "important");
 		list.style.setProperty("height", "auto", "important");
 		list.style.setProperty("max-height", `calc(100% - ${listTop}px)`, "important");
 		fitRows(list);
-		// Remember how TIDAL styles its "View all results for …" row, for the hint
+		// The hint copies this row's look
 		const viewAll = list.querySelector<HTMLElement>('[data-test="view-all-results"]');
 		const viewAllText = viewAll?.querySelector("span");
 		if (viewAll && viewAllText && (viewAll.className !== viewAllClasses.row || viewAllText.className !== viewAllClasses.text)) {
 			viewAllClasses = { row: viewAll.className, text: viewAllText.className };
+			try {
+				localStorage.setItem(VIEW_ALL_KEY, JSON.stringify(viewAllClasses));
+			} catch {}
 			styleSearchHint();
 		}
 		return list.getBoundingClientRect();
 	};
 
 	/**
-	 * The full-screen view's buttons (Similar tracks, Credits, Lyrics, full screen, close).
-	 * Queue open: copies in the queue's top section (TIDAL's own are under the queue), mirroring TIDAL's state and pressing
-	 * TIDAL's buttons. Queue closed: TIDAL's own, centered where the queue would be.
-	 * A song without lyrics gets a greyed-out Lyrics button instead of none, so the row keeps its layout.
+	 * Full-screen view buttons: copied into the queue's top section while it's open, otherwise TIDAL's own centered
+	 * over the queue's column. Without lyrics, a greyed-out Lyrics button keeps the layout.
 	 */
 	const HEAD_BUTTONS = [
 		{ test: "toggle-similar-tracks", label: "Similar tracks" },
@@ -860,6 +845,29 @@ const createPanel = (unloads: LunaUnloads) => {
 	}
 	capButtons.append(contentGroup, actionGroup);
 
+	const CONTENT_TOGGLES = ["toggle-similar-tracks", "toggle-credits", "toggle-lyrics"];
+	/** The header child holding the full-screen buttons */
+	const buttonsRowOf = (view: HTMLElement | undefined) => {
+		const header = view?.querySelector<HTMLElement>(":scope > header");
+		let node = header?.querySelector<HTMLElement>(HEAD_BUTTONS.map(({ test }) => `[data-test="${test}"]`).join(", "));
+		while (node && node.parentElement !== header) node = node.parentElement ?? undefined;
+		return node ?? undefined;
+	};
+	/** Closest element holding all text buttons (Similar tracks, Credits, Lyrics) */
+	const contentButtonsOf = (row: HTMLElement) => {
+		const toggles = CONTENT_TOGGLES.map((test) => row.querySelector<HTMLElement>(`[data-test="${test}"]`)).filter((node): node is HTMLElement => node !== null);
+		if (toggles.length === 0) return;
+		if (toggles.length === 1) {
+			// Just one: its part of the row, or the row itself
+			let node = toggles[0];
+			while (node.parentElement && node.parentElement !== row) node = node.parentElement;
+			return node === toggles[0] ? row : node;
+		}
+		let group: HTMLElement | null = toggles[0].parentElement;
+		while (group && group !== row && !toggles.every((toggle) => group!.contains(toggle))) group = group.parentElement;
+		return group ?? row;
+	};
+
 	let mirroredView: HTMLElement | undefined;
 	const tidalButton = (test: string) => mirroredView?.querySelector<HTMLElement>(`:scope > header [data-test="${test}"]`) ?? null;
 	const updateProxies = () => {
@@ -869,7 +877,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			proxy.disabled = tidal === null;
 			proxy.classList.toggle("is-active", tidal?.getAttribute("aria-pressed") === "true");
 			if (proxy.classList.contains("oq-cap-btn--icon")) {
-				// TIDAL's current icon (e.g. maximize/minimize) and label
+				// TIDAL's current icon and label (e.g. maximize/minimize)
 				const tidalSvg = tidal?.querySelector("svg");
 				const href = tidalSvg?.querySelector("use")?.getAttribute("href");
 				const svg = proxy.querySelector("svg");
@@ -891,31 +899,33 @@ const createPanel = (unloads: LunaUnloads) => {
 	};
 	const pressTidalButton = (test: string) => tidalButton(test)?.click();
 
-	/** Queue closed: a greyed-out Lyrics button in TIDAL's own row when the song has no lyrics */
 	const placeholderOf = (row: Element) => row.querySelector<HTMLElement>(":scope .oq-lyrics-missing");
 	const syncLyricsPlaceholder = (view: HTMLElement | undefined) => {
-		const group = view?.querySelector<HTMLElement>(':scope > header div[class^="_contentButtons"]');
+		const row = buttonsRowOf(view);
+		const group = row && contentButtonsOf(row);
 		document.querySelectorAll(".oq-lyrics-missing").forEach((node) => node.parentElement !== group && node.remove());
 		if (!group) return;
 		const lyrics = group.querySelector('[data-test="toggle-lyrics"]');
 		const placeholder = placeholderOf(group);
 		if (lyrics) return placeholder?.remove();
 		if (placeholder) return;
+		// Copies an unpressed button so it doesn't look selected
+		const similar = group.querySelector<HTMLElement>('[data-test="toggle-similar-tracks"]');
 		const credits = group.querySelector<HTMLElement>('[data-test="toggle-credits"]');
-		if (!credits) return;
-		const copy = credits.cloneNode(true) as HTMLElement;
+		const template = [credits, similar].find((node) => node && node.getAttribute("aria-pressed") !== "true") ?? credits ?? similar;
+		if (!template) return;
+		const copy = template.cloneNode(true) as HTMLElement;
 		copy.removeAttribute("data-test");
 		copy.removeAttribute("aria-pressed");
 		copy.setAttribute("aria-disabled", "true");
 		copy.tabIndex = -1;
 		copy.classList.add("oq-lyrics-missing");
-		for (const name of [...copy.classList]) if (name.startsWith("_toggleButtonActive")) copy.classList.remove(name);
 		const label = copy.querySelector("span") ?? copy;
 		label.textContent = "Lyrics";
 		group.appendChild(copy);
 	};
 
-	// TIDAL changes the row on song changes and toggles: mirror and re-apply right away
+	// TIDAL updates the row on song changes and toggles
 	const headerObserver = new MutationObserver(() => {
 		updateProxies();
 		syncLyricsPlaceholder(mirroredView);
@@ -927,7 +937,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	let centeredShift = 0;
 	const uncenterButtons = () => {
 		centeredButtons?.style.removeProperty("transform");
-		centeredButtons?.classList.remove("oq-row-covered");
+		centeredButtons?.classList.remove("oq-row-covered", "oq-fs-buttons");
 		centeredButtons = undefined;
 		centeredShift = 0;
 	};
@@ -941,7 +951,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		cap.classList.toggle("has-buttons", view !== undefined && queueOpen);
 		if (view && queueOpen) {
 			updateProxies();
-			// As roomy as fits the queue's width (with the same space left and right)
+			// Roomiest level that fits, with equal margins
 			const levels = ["is-loose", "is-snug", "is-tight", "is-tighter"];
 			const margin = 12;
 			capButtons.classList.remove(...levels);
@@ -951,29 +961,27 @@ const createPanel = (unloads: LunaUnloads) => {
 				if (cap.clientWidth - capButtons.scrollWidth >= margin * 2) break;
 				if (level !== "is-tighter" && level !== "is-tight") capButtons.classList.remove(level);
 			}
-			// Whatever room is left goes into the 4 gaps between the buttons, in whole pixels
+			// Leftover room goes into the 4 gaps
 			const extra = Math.floor((cap.clientWidth - capButtons.scrollWidth - margin * 2) / 4);
 			if (extra > 0) capButtons.style.setProperty("--oq-cap-extra", `${Math.min(extra, 8)}px`);
 		}
 		syncLyricsPlaceholder(view);
 
-		const row = view?.querySelector<HTMLElement>(':scope > header > div[class^="_buttons"]');
+		const row = buttonsRowOf(view);
 		if (row !== centeredButtons) uncenterButtons();
 		if (!row) return;
 		centeredButtons = row;
-		// Under the queue anyway, the copies in the queue take over
+		if (!row.classList.contains("oq-fs-buttons")) row.classList.add("oq-fs-buttons");
+		// Hidden under the open queue, which shows copies
 		row.classList.toggle("oq-row-covered", queueOpen);
 		const rect = row.getBoundingClientRect();
-		// Where TIDAL put it, without our shift
+		// TIDAL's position without our shift
 		const left = rect.left - centeredShift;
 		centeredShift = Math.round(columnLeft + (columnWidth - rect.width) / 2 - left);
 		row.style.transform = `translateX(${centeredShift}px)`;
 	};
 
-	/**
-	 * While searching, TIDAL's invisible close-on-click layer covers the whole window. The queue is cut out of it so it
-	 * stays fully usable (right-click menus, hover, scrolling), and pressing anywhere in it closes the search instead.
-	 */
+	/** While searching, TIDAL's click-to-close layer covers the window; the queue is cut out so it stays usable */
 	const BACKDROP = '#mainHeader [data-test="search-popover-backdrop"]';
 	let cutBackdrop: HTMLElement | undefined;
 	const uncutBackdrop = () => {
@@ -997,7 +1005,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	const defaultQueueWidth = () =>
 		parseFloat(getComputedStyle(document.querySelector(".has-footer-player") ?? document.documentElement).getPropertyValue("--playQueueWidth")) || 350;
 
-	/** Blocks, search bar and search results, around the queue (`queueRect`) or where it would be */
+	/** Blocks, search bar and results, around the queue or where it would be */
 	const layoutHeader = (queueRect: DOMRect | undefined) => {
 		const clientWidth = document.documentElement.clientWidth;
 		const top = titleBarBottom();
@@ -1019,27 +1027,25 @@ const createPanel = (unloads: LunaUnloads) => {
 
 		layoutFullscreenButtons(fullscreen, queueRect !== undefined, queueLeft, width);
 
-		// Searching: a block left of the queue (or where the queue would be), down to the end of the big cover
+		// Search block: left of the queue, down to the end of the big cover
 		const popover = fullscreen ? null : document.querySelector<HTMLElement>(POPOVER);
 		const searching = popover !== null && anchor !== undefined;
 		const searchLeft = searching && queueRect ? queueLeft - width : queueLeft;
 		const bottom = heroBottom || top + 58 + Math.min(width, window.innerHeight * 0.46);
 		searchBlock.classList.toggle("is-open", searching);
-		// One surface with the queue's top section, no line between them
+		// Merges with the queue's top section
 		panel.classList.toggle("is-joined", searching && queueRect !== undefined);
 
 		if (!fullscreen) fitSearch(searchLeft);
-		// Exactly the search block, TIDAL's content fills it (and leaves room for the search bar itself)
 		if (searching && popover) {
-			// The first result lines up with the top of the queue's big cover
+			// First result lines up with the queue's big cover
 			const headerBottom = document.getElementById("mainHeader")?.getBoundingClientRect().bottom ?? top;
 			const listTop = Math.max(0, (queueTop || headerBottom) - top);
 			const list = stylePopover(popover, searchLeft, top, width, bottom - top, listTop);
-			// Nothing from TIDAL yet: a hint instead, and only as tall as that
+			// No results yet: the hint
 			const empty = !list || list.height < 1 || popover.firstElementChild?.childElementCount === 0;
 			searchHint.hidden = !empty;
 			searchHint.style.top = `${listTop}px`;
-			// Shorter when there are only a few results
 			const blockBottom = empty ? top + listTop + searchHint.offsetHeight : list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
 			setBox(searchBlock, searchLeft, top, width, blockBottom - top, origin);
 		} else unstylePopover();
@@ -1054,12 +1060,9 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (value) render();
 	};
 
-	/** TIDAL marks its open queue with an `_isOpen_…` class */
-	const isTidalQueueOpen = (aside: HTMLElement) => {
-		const hasOpenClass = [...aside.classList].some((name) => name.startsWith("_isOpen"));
-		// Fall back on the store if TIDAL ever drops the class
-		return hasOpenClass || redux.store.getState().view?.showPlayQueueAside === true;
-	};
+	/** Matches the class's name part, so a new hash doesn't matter (the store value is stale in current TIDAL) */
+	const isTidalQueueOpen = (aside: HTMLElement) =>
+		[...aside.classList].some((name) => /^_?isOpen(?:_|$)/.test(name)) || redux.store.getState().view?.showPlayQueueAside === true;
 
 	let placeFailed = false;
 	const place = () => {
@@ -1070,10 +1073,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			placeFailed = true;
 		}
 	};
-	/**
-	 * Where an element sits in the layout, ignoring transforms: TIDAL animates its queue when it opens/closes,
-	 * and following that frame by frame made the blocks jump around
-	 */
+	/** Layout position ignoring transforms, so the blocks don't follow TIDAL's open/close animation frame by frame */
 	const layoutRect = (node: HTMLElement) => {
 		let x = 0;
 		let y = 0;
@@ -1089,7 +1089,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		return new DOMRect(x, y, node.offsetWidth, node.offsetHeight);
 	};
 
-	/** Returns where the queue is, if it's open */
+	/** The queue's rect, if open */
 	const placeQueue = (): DOMRect | undefined => {
 		const aside = tidalAside();
 		const wrapper = aside?.parentElement;
@@ -1104,7 +1104,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const origin = probe.getBoundingClientRect();
 		const width = document.documentElement.clientWidth - rect.left;
 		const zIndex = [wrapper, aside].map((node) => getComputedStyle(node).zIndex).find((z) => z !== "auto") ?? "";
-		// The top section runs from the title bar down to where TIDAL's queue starts
+		// Top section: from the title bar down to TIDAL's queue
 		const titleBar = titleBarBottom();
 		const top = rect.top - titleBar >= 1 ? titleBar : rect.top;
 		Object.assign(panel.style, {
@@ -1120,7 +1120,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		return rect;
 	};
 
-	// Follow TIDAL's own open/close animation for a moment
+	// Follows TIDAL's open/close animation for a moment
 	let followUntil = 0;
 	let followFrame = 0;
 	const follow = () => {
@@ -1153,9 +1153,9 @@ const createPanel = (unloads: LunaUnloads) => {
 	});
 	observe(unloads, "#footerPlayer", (footer) => watch(footer));
 	window.addEventListener("resize", place);
-	// Search results opening/closing, the full-screen view opening/closing
+	// Search and full-screen view opening/closing
 	observe(unloads, POPOVER, () => follow());
-	// Only when the full-screen view's header appears, not on every lyrics change inside it
+	// Header only, not every lyrics change
 	observe(unloads, '[data-test="new-now-playing"] > header', () => follow());
 	const onFocusChange = () => follow();
 	document.addEventListener("focusin", onFocusChange);
@@ -1174,7 +1174,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			lastView = state.view;
 			follow();
 		}
-		// In case TIDAL replaced its queue without us noticing
+		// In case TIDAL replaced its queue unnoticed
 		if (!open && tidalAside() !== watchedAside) {
 			watchAside(tidalAside());
 			follow();
@@ -1208,7 +1208,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	function updateScrollbar() {
 		const { scrollTop, scrollHeight, clientHeight } = scroll;
 		const range = scrollHeight - clientHeight;
-		// Starts below the cover and moves up with it, but stays below the compact bar (and the top section)
+		// Below the cover and moving up with it, but under the compact bar
 		const head = scroll.offsetTop;
 		const top = head + Math.max(MINI_HEIGHT, hero.offsetHeight - scrollTop);
 		const height = head + clientHeight - top;
@@ -1292,10 +1292,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	};
 
-	/**
-	 * Songs are removed one by one like the remove button (replacing the whole queue makes TIDAL stop the song),
-	 * a few at a time so TIDAL doesn't freeze on long queues. They disappear from the list right away.
-	 */
+	/** One by one like the remove button (replacing the queue stops playback), a few at a time to avoid freezes */
 	const removeUids = (uids: string[]) => {
 		const pending = uids.filter((uid) => !removing.has(uid));
 		if (pending.length === 0) return;
@@ -1309,8 +1306,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	};
 
 	/**
-	 * Removes upcoming songs only, history and the current song stay (TIDAL's own Clear drops the history too).
-	 * With `endSource`, TIDAL's later top-ups from the same playlist/album are removed too, so the queue really ends.
+	 * Clears upcoming songs only (TIDAL's Clear drops the history too).
+	 * `endSource` also removes TIDAL's later top-ups from the same source.
 	 */
 	const removeAll = (filter: (element: Element_) => boolean, endSource = false) => {
 		const { elements, currentIndex } = PlayState.playQueue;
@@ -1320,7 +1317,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		removeUids(cleared.map((element) => element.uid));
 	};
 
-	/** TIDAL keeps topping up the queue from where it was playing from, even after it was cleared */
+	/** TIDAL keeps topping up from the cleared source */
 	let refillGuard: { contexts: Set<string>; known: Set<string> } | undefined;
 	const contextKey = (element: Element_) => `${element.context?.type}:${element.context?.id ?? ""}`;
 	const isRefill = (guard: NonNullable<typeof refillGuard>, element: Element_) =>
@@ -1332,15 +1329,15 @@ const createPanel = (unloads: LunaUnloads) => {
 		const guard = refillGuard;
 		if (guard === undefined || !repeatOff()) return;
 		const { elements, currentIndex } = PlayState.playQueue;
-		// TIDAL sometimes puts a song from the playlist straight into play when the queue runs out
+		// TIDAL sometimes plays a song from the cleared source when the queue runs out
 		const current = elements[currentIndex];
 		if (current && isRefill(guard, current)) return endQueue();
 		const refills = elements.slice(currentIndex + 1).filter((element) => isRefill(guard, element));
-		// Anything else that shows up (songs you add, a radio) stays
+		// Anything else (your songs, a radio) stays
 		elements.forEach((element) => guard.known.add(element.uid));
 		if (refills.length > 0) removeUids(refills.map((element) => element.uid));
 	};
-	/** Nothing left to play after a Clear: what TIDAL would play next is a song from the cleared playlist */
+	/** Queue ran out after a Clear (TIDAL's next pick would be from the cleared playlist) */
 	const atEndOfClearedQueue = () => {
 		const guard = refillGuard;
 		if (guard === undefined || ending || !repeatOff()) return false;
@@ -1348,7 +1345,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		return elements.slice(currentIndex + 1).every((element) => removing.has(element.uid) || isRefill(guard, element));
 	};
 
-	/** The current song's track radio from TIDAL, if it has one */
+	/** The song's track radio, if any */
 	const trackRadioId = (trackId: redux.ItemId) =>
 		new Promise<redux.ItemId | undefined>((resolve) => {
 			const stored = redux.store.getState().content.mediaItems[String(trackId)]?.item as { mixes?: Record<string, string> | null } | undefined;
@@ -1373,7 +1370,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			redux.actions["mix/LOAD_TRACK_MIX_ID"]({ id: trackId });
 		});
 
-	/** The radio's songs, loaded through TIDAL (playing a mix TIDAL hasn't loaded yet crashes its player) */
+	/** Loaded through TIDAL: playing an unloaded mix crashes its player */
 	const radioTracks = (mixId: redux.ItemId) =>
 		new Promise<redux.ItemId[]>((resolve) => {
 			let done = false;
@@ -1392,7 +1389,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			redux.actions["mix/LOAD_TRACK_LIST_FOR_MIX_ID"]({ mixId, failSilently: true });
 		});
 
-	/** Like TIDAL's autoplay: the current song's radio, or stop if there is none (or autoplay is off) */
+	/** Like TIDAL's autoplay: the song's radio, or stop */
 	let ending = false;
 	const endQueue = async () => {
 		if (ending) return;
@@ -1403,7 +1400,7 @@ const createPanel = (unloads: LunaUnloads) => {
 			const current = elements[currentIndex];
 			const autoPlay = redux.store.getState().settings?.autoPlay !== false;
 			const mixId = autoPlay && current ? await trackRadioId(current.mediaItemId) : undefined;
-			// The radio usually starts with the current song itself
+			// The radio usually starts with the current song
 			const tracks = mixId !== undefined ? (await radioTracks(mixId)).filter((id) => String(id) !== String(current?.mediaItemId)) : [];
 			if (mixId !== undefined && tracks.length > 0) redux.actions["playQueue/ADD_NOW"]({ context: { type: "mix", id: mixId }, mediaItemIds: tracks, fromIndex: 0 });
 			else redux.actions["playbackControls/STOP"]();
@@ -1415,14 +1412,14 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	};
 
-	// Skipping or a song ending after a Clear: radio instead of TIDAL's pick from the cleared playlist
+	// After a Clear: radio instead of TIDAL's pick from the cleared playlist
 	redux.intercept(["playQueue/MOVE_NEXT", "playbackControls/SKIP_NEXT"], unloads, () => {
 		if (!atEndOfClearedQueue()) return;
 		endQueue();
 		return true;
 	});
 
-	// Playing or queueing something yourself ends the guard
+	// Playing or queueing anything yourself ends the guard
 	redux.intercept(
 		[
 			"playQueue/ADD_NOW",
@@ -1463,7 +1460,7 @@ const createPanel = (unloads: LunaUnloads) => {
 				case "proxy":
 					return pressTidalButton(button.dataset.proxy ?? "");
 				case "close": {
-					// TIDAL's own close button, the store action doesn't close it in every TIDAL version
+					// The store action doesn't close it in every TIDAL version
 					const close = document.querySelector<HTMLElement>('#playQueueSidebar [data-test="playqueue-close-button"]');
 					if (close) close.click();
 					else redux.actions["view/TOGGLE_PLAY_QUEUE_VISIBILITY"]();
@@ -1530,7 +1527,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	});
 
-	// Fades on the side(s) with more covers
+	// Fades on the sides with more covers
 	const updateStripFades = () => {
 		const max = strip.scrollWidth - strip.clientWidth;
 		strip.classList.toggle("fade-left", strip.scrollLeft > 1);
@@ -1539,7 +1536,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	strip.addEventListener("scroll", updateStripFades, { passive: true });
 	new ResizeObserver(updateStripFades).observe(strip);
 
-	// Vertical scrolling over the recently played strip scrolls it sideways
+	// Vertical wheel scrolls the strip sideways
 	strip.addEventListener(
 		"wheel",
 		(e) => {
@@ -1583,14 +1580,14 @@ const createPanel = (unloads: LunaUnloads) => {
 		autoScroll = requestAnimationFrame(autoScrollStep);
 	};
 
-	/** Any press (left, right, middle) outside the search results and the search field closes the search */
+	/** Any press outside the search results and field closes the search */
 	const onAnyPress = (e: PointerEvent) => {
 		if (!styledPopover || !(e.target instanceof Element)) return;
 		const target = e.target;
 		if (styledPopover.contains(target)) return;
 		const onBackdrop = target.closest(BACKDROP) !== null;
 		if (!onBackdrop && target.closest('#mainHeader [data-test="search-popover-container"]')) return;
-		// TIDAL closes it itself on a left click on its layer
+		// TIDAL handles left clicks on its layer itself
 		if (onBackdrop && e.button === 0) return;
 		closeSearch();
 	};
@@ -1647,9 +1644,9 @@ const createPanel = (unloads: LunaUnloads) => {
 		setTimeout(() => (suppressClick = false));
 		if (cancelled || !target) return;
 		const currentIndex = PlayState.playQueue.currentIndex;
-		// TIDAL inserts before `toIndex`, counted before the song is taken out
+		// TIDAL inserts before `toIndex`, counted before removal
 		const to = Math.max(Number(target.dataset.index) + (after ? 1 : 0), currentIndex + 1);
-		// Dropped right above or below itself: nothing moves
+		// Dropped next to itself: nothing moves
 		if (to !== from && to !== from + 1) redux.actions["playQueue/MOVE_TRACK"]({ fromIndex: from, toIndex: to });
 	};
 	panel.addEventListener("pointerup", (e) => endDrag(e, false));
@@ -1688,7 +1685,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	unloads.add(unload);
 };
 
-/** Sets up the redesigned queue and turns it on/off with its setting */
+/** Sets up the queue; toggled by its setting */
 export const setupQueue = (unloads: LunaUnloads) => {
 	let active: Set<LunaUnload> | undefined;
 	const disable = () => {
@@ -1699,7 +1696,7 @@ export const setupQueue = (unloads: LunaUnloads) => {
 		if (settings.queue === (active !== undefined)) return;
 		if (!settings.queue) return disable();
 		active = new Set();
-		// Hide TIDAL's queue but keep the space it takes up
+		// Hides TIDAL's queue but keeps its space
 		new StyleTag("Office-queue", active, `${styles}\n#playQueueSidebar { visibility: hidden !important; }`);
 		try {
 			createPanel(active);
