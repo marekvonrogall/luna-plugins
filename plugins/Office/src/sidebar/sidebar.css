@@ -629,6 +629,17 @@
 	font-weight: 400;
 	line-height: 1.3;
 }
+/* Highlights 2px inside the rows, so neighbouring ones never touch; the rows keep their size */
+#sidebar-content > a[data-test],
+#sidebar [data-test="sidebar-collection-menu"],
+#sidebar :has(> a[data-test^="sidebar-collection-"]):not(#sidebar-content, [role="menu"]) > a,
+#sidebar [data-test="sidebar-scrollable-nav"] > a {
+	border: solid transparent !important;
+	border-width: 2px 0 !important;
+	/* 6px corners on the highlight itself */
+	border-radius: 6px / 8px !important;
+	background-clip: padding-box !important;
+}
 /* Bars on the playlist the current song plays from (index.ts adds them) */
 #sidebar .osb-bars {
 	display: flex;

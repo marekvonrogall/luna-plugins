@@ -275,6 +275,19 @@
 	)::after {
 	content: none !important;
 }
+/* The highlight sits 2px inside, so neighbouring ones never touch (heart and options keep theirs flush with the cover) */
+#footerPlayer :is(
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	) {
+	border: 2px solid transparent !important;
+	background-clip: padding-box !important;
+}
 #footerPlayer :is(
 		[data-test="footer-favorite-button"],
 		[data-test="footer-context-menu"],
@@ -406,7 +419,7 @@
 	margin: 0;
 	padding: 0;
 }
-/* One row: the toolbar's buttons (other plugins' too), then mute, the slider and the volume */
+/* One row, ordered below */
 #footerPlayer :has(> [data-test="play-queue-button"]) {
 	display: grid !important;
 	grid-template-rows: 32px;
