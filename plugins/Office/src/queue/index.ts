@@ -713,7 +713,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const zIndex = getComputedStyle(root).zIndex;
 		return { parent: root.parentElement!, before: root, zIndex: zIndex === "auto" ? "" : zIndex };
 	};
-	/** The blocks share the queue's layer; TIDAL's header goes one above */
+	/** The blocks share the queue's layer (at least above the sidebar); TIDAL's header goes one above */
 	const raised = new Map<HTMLElement, string>();
 	const raiseAbove = (node: HTMLElement, zIndex: number) => {
 		const current = parseInt(getComputedStyle(node).zIndex);
@@ -1125,9 +1125,12 @@ const createPanel = (unloads: LunaUnloads) => {
 		const fullscreen = closing ? undefined : view;
 		const anchor = headerAnchor();
 		if (anchor && anchor.before) {
-			const queueLayer = parseInt(panel.style.zIndex);
-			if (!Number.isNaN(queueLayer)) raiseAbove(anchor.before, queueLayer);
-			mountBlocks(anchor, Number.isNaN(queueLayer) ? anchor.zIndex : String(queueLayer));
+			// Above the sidebar too: in narrow windows the results reach over it
+			const sidebar = document.querySelector('[data-test="main-layout-sidebar-wrapper"]');
+			const layers = [parseInt(panel.style.zIndex), sidebar ? parseInt(getComputedStyle(sidebar).zIndex) + 1 : NaN].filter((z) => !Number.isNaN(z));
+			const layer = layers.length > 0 ? Math.max(...layers) : NaN;
+			if (!Number.isNaN(layer)) raiseAbove(anchor.before, layer);
+			mountBlocks(anchor, Number.isNaN(layer) ? anchor.zIndex : String(layer));
 		}
 		const origin = blockProbe.getBoundingClientRect();
 
@@ -1707,7 +1710,8 @@ const createPanel = (unloads: LunaUnloads) => {
 	const onAnyPress = (e: PointerEvent) => {
 		if (!styledPopover || !(e.target instanceof Element)) return;
 		const target = e.target;
-		if (styledPopover.contains(target)) return;
+		// TIDAL marks what keeps the search open, like a result's context menu
+		if (styledPopover.contains(target) || target.closest('[data-prevent-search-close="true"]')) return;
 		const onBackdrop = target.closest(BACKDROP) !== null;
 		if (!onBackdrop && target.closest('#mainHeader [data-test="search-popover-container"]')) return;
 		// TIDAL handles left clicks on its layer itself
