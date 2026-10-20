@@ -295,9 +295,10 @@ const controls = (unloads: LunaUnloads) => {
 	// #endregion
 
 	// #region Fitting the window
-	/** Marks the buttons that go into the menu, in order */
+	/** Marks the buttons that go into the menu, in their order in the bar (bar.css) */
 	const markMenu = (bar: HTMLElement) => {
-		const items = menuItems(bar);
+		const order = (node: HTMLElement) => Number(getComputedStyle(node).order) || 0;
+		const items = menuItems(bar).sort((a, b) => order(a) - order(b));
 		items.forEach((node, index) => {
 			if (!node.hasAttribute(IN_MENU)) node.setAttribute(IN_MENU, "");
 			if (node.style.getPropertyValue("--opb-i") !== String(index)) node.style.setProperty("--opb-i", String(index));

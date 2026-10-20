@@ -418,8 +418,24 @@
 	margin: 0;
 	padding: 0;
 }
-#footerPlayer :has(> [data-test="volume"]) {
+/* Queue, buttons other plugins add, ⋯, volume, sound output, mini player (the menu follows this order too) */
+#footerPlayer :has(> [data-test="play-queue-button"]) > * {
 	order: 1;
+}
+#footerPlayer [data-test="play-queue-button"] {
+	order: 0;
+}
+#footerPlayer [data-test="select-device"] {
+	order: 7;
+}
+#footerPlayer .opb-more {
+	order: 3;
+}
+#footerPlayer [data-test="enter-compact-mode"] {
+	order: 8;
+}
+#footerPlayer :has(> [data-test="volume"]) {
+	order: 4;
 	display: grid;
 	place-items: center;
 	margin: 0 0 0 12px;
@@ -429,11 +445,11 @@
 	display: none !important;
 }
 #footerPlayer .opb-volume {
-	order: 2;
+	order: 5;
 	width: 112px !important;
 }
 #footerPlayer .opb-volume-value {
-	order: 3;
+	order: 6;
 	min-width: 3ch;
 	color: var(--opb-dim);
 	font-size: 12px;
