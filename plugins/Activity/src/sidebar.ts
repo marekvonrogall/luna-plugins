@@ -9,6 +9,22 @@ const DATA_TEST = "sidebar-my-activity";
 const LABEL = "My Activity";
 /** Three bars like the mobile app's: short, tallest, in between */
 const ICON = '<path d="M6 20v-7M12 20V4M18 20v-11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+const ICON_SIZE = 18;
+const DEFAULT_FILL = 0.7;
+
+/** How much of its box a TIDAL icon fills */
+const fillOf = (svg: SVGSVGElement | null) => {
+	if (svg === null) return DEFAULT_FILL;
+	try {
+		const box = svg.getBBox();
+		const view = svg.viewBox.baseVal;
+		const size = view && view.width > 0 && view.height > 0 ? Math.max(view.width, view.height) : Math.max(svg.clientWidth, svg.clientHeight);
+		const fill = Math.max(box.width, box.height) / size;
+		return fill > 0.2 && fill <= 1 ? fill : DEFAULT_FILL;
+	} catch {
+		return DEFAULT_FILL;
+	}
+};
 
 export interface SidebarLink {
 	setActive(active: boolean): void;
@@ -54,7 +70,9 @@ export const setupSidebarLink = (unloads: LunaUnloads, href: string, onOpen: () 
 		const svg = node.querySelector(":scope > svg");
 		if (svg !== null) {
 			svg.removeAttribute("style");
-			svg.setAttribute("viewBox", "0 0 24 24");
+			const box = ICON_SIZE / fillOf(source.querySelector<SVGSVGElement>(":scope > svg"));
+			const start = (12 - box / 2).toFixed(2);
+			svg.setAttribute("viewBox", `${start} ${start} ${box.toFixed(2)} ${box.toFixed(2)}`);
 			svg.innerHTML = ICON;
 		}
 		// The innermost element holding the label, or a bare text node
