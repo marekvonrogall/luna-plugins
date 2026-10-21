@@ -1,6 +1,6 @@
 {
 	"name": "Collector",
-	"description": "Bulk-Add songs/albums/playlists/artists to playlists.",
+	"description": "Advanced playlist management tools",
 	"homepage": "https://github.com/marekvonrogall/luna-plugins#collector",
 	"author": {
 		"name": "marekvonrogall",

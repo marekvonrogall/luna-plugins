@@ -3,6 +3,7 @@ import { redux } from "@luna/lib";
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
 import { trackExists } from "./api";
 import { trace } from "./core";
+import { ownEditListeners } from "./ratings";
 import { canonicalId, linkTrackIds } from "./store";
 
 /**
@@ -12,8 +13,8 @@ import { canonicalId, linkTrackIds } from "./store";
  */
 
 type Entry = { id: string; title: string; artists: string[]; duration?: number };
-/** `misses`: rows (id@position) checked without a match */
-type PlaylistIds = { version: string; at: number; entries: Entry[]; ids: Set<string>; misses: Set<string> };
+/** `misses`: rows (id@position) checked without a match. `adoptUntil`: after our own edit, the next version is taken over */
+type PlaylistIds = { version: string; at: number; entries: Entry[]; ids: Set<string>; misses: Set<string>; adoptUntil?: number };
 
 const lists = new Map<string, PlaylistIds>();
 const loading = new Map<string, Promise<void>>();
@@ -36,10 +37,38 @@ const playlistVersion = (uuid: string) => {
 	return `${playlist?.lastUpdated ?? ""}|${playlist?.numberOfTracks ?? ""}`;
 };
 
+const OWN_EDIT_WINDOW = 30 * 1000;
+
+const entryOf = (id: string): Entry => {
+	const item = redux.store.getState().content.mediaItems[id]?.item;
+	return {
+		id,
+		title: normalize(item?.title),
+		artists: (item?.artists ?? []).map((artist) => normalize(artist.name)),
+		duration: item?.duration ?? undefined,
+	};
+};
+
+// Added songs go to the end
+ownEditListeners.add((uuid, added, removed) => {
+	const list = lists.get(uuid);
+	if (list === undefined) return;
+	const gone = new Set(removed);
+	list.entries = list.entries.filter((entry) => !gone.has(entry.id));
+	for (const id of added) if (!list.entries.some((entry) => entry.id === id)) list.entries.push(entryOf(id));
+	list.ids = new Set(list.entries.map((entry) => entry.id));
+	list.misses.clear();
+	list.adoptUntil = Date.now() + OWN_EDIT_WINDOW;
+});
+
 /** The API's copy of the playlist; undefined until loaded, then `onLoaded` runs */
 const playlistIds = (uuid: string, onLoaded: () => void) => {
 	const version = playlistVersion(uuid);
 	const cached = lists.get(uuid);
+	if (cached !== undefined && cached.version !== version && (cached.adoptUntil ?? 0) > Date.now()) {
+		cached.version = version;
+		cached.adoptUntil = undefined;
+	}
 	if (cached?.version === version && Date.now() - cached.at < MAX_AGE) return cached;
 	if (!loading.has(uuid) && Date.now() - (failedAt.get(uuid) ?? 0) > RETRY_AFTER) {
 		const load = fetchPlaylistItems(uuid)

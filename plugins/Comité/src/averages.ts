@@ -2,7 +2,7 @@ import { redux } from "@luna/lib";
 
 import { fetchPlaylistPage } from "../../../shared/playlistItems";
 import { getArtistCatalog } from "./api";
-import { getTrackMeta, ratedTracks, ratingsVersion } from "./ratings";
+import { getTrackMeta, ownEditListeners, ratedTracks, ratingsVersion } from "./ratings";
 
 /** Playlists show an average once this share of their songs is rated */
 const PLAYLIST_MIN_COVERAGE = 0.75;
@@ -136,8 +136,22 @@ const limited = async <T>(task: () => Promise<T>): Promise<T> => {
 };
 
 /** Song ids read so far (in playlist order); a playlist is only read as far as needed */
-type PlaylistEntry = { stamp: string; at: number; total: number; ids: string[]; complete: boolean };
+/** `adoptUntil`: after our own edit, the next new stamp is taken over instead of re-reading */
+type PlaylistEntry = { stamp: string; at: number; total: number; ids: string[]; complete: boolean; adoptUntil?: number };
 const playlists = new Map<string, PlaylistEntry>();
+
+const OWN_EDIT_WINDOW = 30 * 1000;
+ownEditListeners.add((uuid, added, removed) => {
+	const entry = playlists.get(uuid);
+	// Partly read playlists continue by position, which the edit shifts
+	if (entry === undefined || !entry.complete) return;
+	const gone = new Set(removed);
+	const ids = entry.ids.filter((id) => !gone.has(id));
+	for (const id of added) if (!ids.includes(id)) ids.push(id);
+	entry.ids = ids;
+	entry.total = ids.length;
+	entry.adoptUntil = Date.now() + OWN_EDIT_WINDOW;
+});
 /** One read per playlist at a time */
 const queues = new Map<string, Promise<unknown>>();
 
@@ -193,6 +207,10 @@ export const playlistAverage = async (uuid: string, force = false, onProgress?: 
 	const info = redux.store.getState().content.playlists[uuid];
 	const stamp = info?.lastUpdated ?? "";
 	let entry = playlists.get(uuid);
+	if (entry !== undefined && entry.stamp !== stamp && (entry.adoptUntil ?? 0) > Date.now()) {
+		entry.stamp = stamp;
+		entry.adoptUntil = undefined;
+	}
 	if (entry === undefined || entry.stamp !== stamp || (stamp === "" && Date.now() - entry.at > PLAYLIST_MAX_AGE)) {
 		// TIDAL already knows the size of playlists in your collection: no request for big ones
 		if (!force && typeof info?.numberOfTracks === "number" && info.numberOfTracks >= MAX_PLAYLIST_SIZE) return { kind: "too-big", total: info.numberOfTracks };

@@ -1,5 +1,7 @@
 import { Tracer, type LunaUnload } from "@luna/core";
-import { ContextMenu, MediaItem, safeInterval, StyleTag } from "@luna/lib";
+import { ContextMenu, MediaItem, safeInterval, StyleTag, type MediaCollection } from "@luna/lib";
+
+import { onMultiSelectMenu } from "../../../shared/multiSelectMenu";
 
 import { addProgressToastStyles, ProgressToast } from "../../../shared/progressToast";
 import { getCollectionItems, type CollectionItem } from "./collectionItems";
@@ -21,7 +23,7 @@ addProgressToastStyles("SongDownloader", unloads);
 const downloadButton = ContextMenu.addButton(unloads);
 
 export { Settings } from "./Settings";
-ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
+const onMediaMenu = async ({ mediaCollection, contextMenu }: { mediaCollection: MediaCollection; contextMenu: Element }) => {
 	const trackCount = await mediaCollection.count();
 	if (trackCount === 0) return;
 
@@ -209,4 +211,7 @@ ContextMenu.onMediaItem(unloads, async ({ mediaCollection, contextMenu }) => {
 	});
 
 	await downloadButton.show(contextMenu);
-});
+};
+ContextMenu.onMediaItem(unloads, onMediaMenu);
+// TIDAL's playlist multi-select menu, which Luna doesn't report
+onMultiSelectMenu(unloads, onMediaMenu);

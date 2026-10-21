@@ -270,7 +270,7 @@ export const startRatingMode = async (source: RateSource) => {
 		const icon = playing ? "pause" : "play";
 		if (playBtn.dataset.icon === icon) return;
 		playBtn.dataset.icon = icon;
-		playBtn.innerHTML = `<svg class="_icon_77f3f89" data-test="icon--player__${icon}" viewBox="0 0 24 24"><use href="#player__${icon}"></use></svg>`;
+		playBtn.innerHTML = `<svg data-test="icon--player__${icon}" viewBox="0 0 24 24"><use href="#player__${icon}"></use></svg>`;
 		playBtn.ariaLabel = playing ? "Pause" : "Play";
 	};
 	setPlayIcon(true);

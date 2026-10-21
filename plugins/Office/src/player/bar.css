@@ -1,0 +1,596 @@
+/*
+ * Office: player bar. Restyles TIDAL's own bar, so its controls keep working.
+ * Only stable hooks: ids, data-test, ARIA, structure.
+ */
+#footerPlayer {
+	/* Title and artist: always this wide, so what follows never moves */
+	--opb-title-width: 240px;
+	--opb-dim: rgba(255, 255, 255, 0.58);
+	--opb-hover: rgba(255, 255, 255, 0.1);
+}
+
+/* #region Layout: song | controls | buttons and volume */
+/* Spans the whole bar; the progress bar is placed against it */
+#footerPlayer > :has(> [data-test="track-info"]) {
+	position: absolute !important;
+	inset: 0 !important;
+	width: auto !important;
+	max-width: none !important;
+	margin: 0 !important;
+	display: grid !important;
+	/* Controls always centered: both sides get the same share */
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	/* Anything else added to the bar: own columns at the far right */
+	grid-auto-columns: max-content;
+	/* One row, as tall as the bar */
+	grid-template-rows: minmax(0, 1fr);
+	align-items: center;
+	column-gap: 24px;
+	height: auto !important;
+	box-sizing: border-box;
+	padding-left: 16px;
+	padding-right: 16px;
+}
+#footerPlayer [data-test="track-info"] {
+	grid-column: 1;
+	grid-row: 1;
+	min-width: 0;
+}
+/* #endregion */
+
+/* #region Song side, and room for other plugins */
+#footerPlayer [data-test="track-info"] {
+	display: flex;
+	align-items: center;
+	/* Fixed spacing (TIDAL tightens it at some widths) */
+	gap: 12px !important;
+}
+#footerPlayer [data-test="track-info"] > * {
+	min-width: 0;
+	margin-left: 0 !important;
+	margin-right: 0 !important;
+}
+#footerPlayer [data-test="player-details-toggle-now-playing"] {
+	flex-shrink: 0;
+}
+/* Other plugins' parts give way first */
+#footerPlayer [data-test="track-info"] > :not([data-test="player-details-toggle-now-playing"], :has([data-test="footer-track-title"])) {
+	flex-shrink: 10 !important;
+	overflow: hidden;
+}
+/* Heart, options, Comité, …: never squeezed */
+#footerPlayer :has(> * > [data-test="footer-track-title"]) > * {
+	flex-shrink: 0;
+}
+#footerPlayer :has(> [data-test="footer-track-title"]) {
+	flex: 0 1 var(--opb-title-width) !important;
+	width: var(--opb-title-width);
+	min-width: 80px;
+	overflow: hidden;
+}
+/* Heart and options: stacked between the cover and the title */
+#footerPlayer :has(> * > [data-test="footer-favorite-button"]) {
+	display: flex;
+	align-items: center;
+	gap: 12px !important;
+}
+#footerPlayer :has(> * > [data-test="footer-favorite-button"]) > * {
+	margin-left: 0 !important;
+	margin-right: 0 !important;
+}
+#footerPlayer :has(> [data-test="footer-favorite-button"]) {
+	/* Together exactly as tall as the cover (TIDAL's is 56px) */
+	--opb-cover: 56px;
+	--opb-stack-gap: 2px;
+	order: -1;
+	display: flex;
+	flex-direction: column;
+	gap: var(--opb-stack-gap);
+	margin: 0;
+}
+#footerPlayer :has(> [data-test="footer-favorite-button"]) > :is([data-test="footer-favorite-button"], [data-test="footer-context-menu"]) {
+	width: calc((var(--opb-cover) - var(--opb-stack-gap)) / 2) !important;
+	height: calc((var(--opb-cover) - var(--opb-stack-gap)) / 2) !important;
+	border-radius: 7px !important;
+}
+#footerPlayer :has(> [data-test="footer-favorite-button"]) > :is([data-test="footer-favorite-button"], [data-test="footer-context-menu"]) svg {
+	width: 16px !important;
+	height: 16px !important;
+}
+/* TIDAL's Block button: also in the ⋯ menu, so it's left out here */
+#footerPlayer [data-test="track-info"] [data-test="block"] {
+	display: none !important;
+}
+/* Title, artist and playing from: one line each, cut with … or scrolled */
+#footerPlayer [data-test="footer-track-title"] {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	max-width: 100%;
+}
+#footerPlayer :is([data-test="footer-track-title"] > a, [data-test="footer-artist-name"]) {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+#footerPlayer :has(> [data-test="source-type-icon"]) {
+	display: flex !important;
+	align-items: center;
+	min-width: 0;
+	max-width: 100%;
+}
+#footerPlayer [data-test="source-type-icon"] {
+	flex-shrink: 0;
+}
+#footerPlayer [data-test="source-type-icon"] + span {
+	display: block !important;
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+#footerPlayer [data-test="source-type-icon"] + span > * {
+	display: inline !important;
+	white-space: nowrap;
+}
+#footerPlayer [data-test="footer-track-title"] > a > * {
+	display: inline !important;
+	overflow: visible !important;
+	white-space: nowrap;
+}
+/* Cut lines: bar.ts scrolls them */
+#footerPlayer [data-office-marquee] {
+	--opb-fade-left: 0px;
+	--opb-fade-right: 10px;
+	text-overflow: clip !important;
+	-webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--opb-fade-left), #000 calc(100% - var(--opb-fade-right)), transparent);
+	mask-image: linear-gradient(90deg, transparent, #000 var(--opb-fade-left), #000 calc(100% - var(--opb-fade-right)), transparent);
+}
+/* Added to the bar's layout: in the extra columns (see above) */
+#footerPlayer > :has(> [data-test="track-info"]) > :not([data-test="track-info"], :has([data-test="play-controls"]), :has([data-test="play-queue-button"])) {
+	grid-row: 1;
+}
+/* Added next to the controls: after the times */
+#footerPlayer :has(> [data-test="play-controls"]) > :not([data-test="play-controls"], :has([data-test="progress-bar"])) {
+	order: 2;
+}
+/* #endregion */
+
+/* #region Controls, with the times beside them */
+#footerPlayer :has(> [data-test="play-controls"]) {
+	grid-column: 2;
+	grid-row: 1;
+	position: static !important;
+	display: flex !important;
+	flex-direction: row !important;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	width: auto !important;
+	min-width: 0;
+	max-width: none !important;
+	margin: 0;
+	padding: 0;
+}
+/* Fixed spacing (TIDAL tightens it): every control 48px from the next */
+#footerPlayer [data-test="play-controls"] {
+	display: flex !important;
+	align-items: center;
+	gap: 8px !important;
+	margin: 0 !important;
+}
+#footerPlayer [data-test="play-controls"] > * {
+	margin: 0 !important;
+}
+#footerPlayer :has(> * > [data-test="previous"]) {
+	display: flex !important;
+	align-items: center;
+	gap: 0 !important;
+	margin: 0 !important;
+}
+#footerPlayer :has(> * > [data-test="previous"]) > * {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 48px !important;
+	margin: 0 !important;
+}
+/* The progress bar's row and box: only their parts take part */
+#footerPlayer :has(> * > [data-test="progress-bar"]),
+#footerPlayer :has(> [data-test="progress-bar"]) {
+	display: contents !important;
+}
+#footerPlayer :is(:has(> [data-test="current-time"]), :has(> [data-test="duration"])) {
+	min-width: 40px;
+	margin: 0;
+	color: var(--opb-dim);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+#footerPlayer :has(> [data-test="current-time"]) {
+	order: -1;
+	text-align: right;
+}
+#footerPlayer :has(> [data-test="duration"]) {
+	order: 1;
+	text-align: left;
+}
+/* #endregion */
+
+/* #region Buttons: all alike (play/pause keeps TIDAL's look; previous and next don't highlight) */
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	) {
+	display: grid !important;
+	place-items: center;
+	width: 32px !important;
+	height: 32px !important;
+	min-width: 0;
+	margin: 0;
+	padding: 0 !important;
+	border: 0;
+	border-radius: 8px !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	color: rgba(255, 255, 255, 0.75) !important;
+	opacity: 1;
+	cursor: pointer;
+	transition:
+		background 0.15s,
+		color 0.15s;
+}
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	)::before,
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	)::after {
+	content: none !important;
+}
+/* The highlight sits 2px inside, so neighbouring ones never touch (heart and options keep theirs flush with the cover) */
+#footerPlayer :is(
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	) {
+	border: 2px solid transparent !important;
+	background-clip: padding-box !important;
+}
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	):hover {
+	background: var(--opb-hover) !important;
+	color: #fff !important;
+}
+/* Previous and next brighten only, like play/pause */
+#footerPlayer button:is([data-test="previous"], [data-test="next"]):hover {
+	background: transparent !important;
+}
+/* On (mute's "on" means sound, so not mute) */
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	):is([aria-pressed="true"], [aria-checked="true"]:not([data-test="volume"]), [aria-expanded="true"]) {
+	background: rgba(255, 255, 255, 0.14) !important;
+	color: #fff !important;
+}
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	):is(:disabled, [aria-disabled="true"]) {
+	/* Dimmed, no hover; bar.ts blocks their clicks */
+	opacity: 0.35;
+	background: transparent !important;
+	color: rgba(255, 255, 255, 0.75) !important;
+	cursor: default;
+}
+#footerPlayer :is(
+		[data-test="footer-favorite-button"],
+		[data-test="footer-context-menu"],
+		[data-test="shuffle"],
+		[data-test="previous"],
+		[data-test="next"],
+		[data-test="repeat"],
+		[data-test="volume"],
+		:has(> [data-test="play-queue-button"]) > button,
+		.opb-mute
+	) svg {
+	width: 20px !important;
+	height: 20px !important;
+	color: inherit !important;
+}
+/* #endregion */
+
+/* #region Progress bar along the top edge */
+#footerPlayer #progressBar {
+	position: absolute !important;
+	top: -7px;
+	left: 0;
+	right: 0;
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	width: auto !important;
+	height: 14px !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	cursor: pointer;
+}
+#footerPlayer #progressBar > :first-child {
+	position: relative;
+	width: 100% !important;
+	height: 3px !important;
+	margin: 0 !important;
+	border-radius: 0 !important;
+	transition: height 0.15s;
+}
+#footerPlayer #progressBar:is(:hover, :focus-visible) > :first-child {
+	height: 5px !important;
+}
+#footerPlayer #progressBar > :first-child > :has([data-test="progress-indicator"]),
+#footerPlayer [data-test="progress-indicator"] {
+	height: 100% !important;
+	border-radius: 0 !important;
+}
+/* Grabbable across the whole hit area, not just the thin line */
+#footerPlayer [data-test="interaction-layer"] {
+	position: absolute !important;
+	top: -6px !important;
+	bottom: -6px !important;
+	left: 0 !important;
+	right: 0 !important;
+	height: auto !important;
+}
+/* Knob only while hovering */
+#footerPlayer #progressBar > :first-child > :first-child:not(:has([data-test="progress-indicator"])) {
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+#footerPlayer #progressBar:is(:hover, :focus-visible) > :first-child > :first-child {
+	opacity: 1;
+}
+/* #endregion */
+
+/* #region Toolbar buttons, volume and audio quality */
+#footerPlayer :has(> * > [data-test="play-queue-button"]) {
+	grid-column: 3;
+	grid-row: 1;
+	justify-self: end;
+	display: flex !important;
+	flex-direction: row !important;
+	align-items: center;
+	gap: 12px;
+	width: auto;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+}
+/* One row, ordered below */
+#footerPlayer :has(> [data-test="play-queue-button"]) {
+	display: grid !important;
+	grid-template-rows: 32px;
+	grid-auto-flow: column;
+	grid-auto-columns: auto;
+	align-items: center;
+	gap: 4px;
+	width: auto;
+	margin: 0;
+	padding: 0;
+}
+/* Queue, buttons other plugins add, ⋯, volume, sound output, mini player (the menu follows this order too) */
+#footerPlayer :has(> [data-test="play-queue-button"]) > * {
+	order: 1;
+}
+#footerPlayer [data-test="play-queue-button"] {
+	order: 0;
+}
+#footerPlayer [data-test="select-device"] {
+	order: 7;
+}
+#footerPlayer .opb-more {
+	order: 3;
+}
+#footerPlayer [data-test="enter-compact-mode"] {
+	order: 8;
+}
+#footerPlayer :has(> [data-test="volume"]) {
+	order: 4;
+	display: grid;
+	place-items: center;
+	margin: 0 0 0 12px;
+}
+/* TIDAL's own (vertical) volume slider: replaced by ours */
+#footerPlayer :has(> [data-test="volume"]) > :not([data-test="volume"]) {
+	display: none !important;
+}
+#footerPlayer .opb-volume {
+	order: 5;
+	width: 112px !important;
+}
+#footerPlayer .opb-volume-value {
+	order: 6;
+	min-width: 3ch;
+	color: var(--opb-dim);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	cursor: default;
+	user-select: none;
+}
+/* Only placed: TIDAL's own size and look */
+#footerPlayer :has(> [data-test^="quality-badge"]) {
+	flex: none;
+	margin: 0;
+}
+/* The horizontal volume plugin's slider, if installed: ours takes its place */
+#footerPlayer .horizontal-volume-slider,
+#footerPlayer .horizontal-volume-slider + input[type="text"] {
+	display: none !important;
+}
+
+/* Horizontal volume slider (bar.ts adds it) */
+#footerPlayer .opb-volume {
+	--opb-value: 0%;
+	width: 100%;
+	height: 20px;
+	margin: 0;
+	padding: 0;
+	appearance: none;
+	background: transparent;
+	cursor: pointer;
+}
+#footerPlayer .opb-volume::-webkit-slider-runnable-track {
+	height: 4px;
+	border-radius: 4px;
+	background: linear-gradient(90deg, #fff var(--opb-value), rgba(255, 255, 255, 0.2) var(--opb-value));
+}
+#footerPlayer .opb-volume.is-muted::-webkit-slider-runnable-track {
+	background: rgba(255, 255, 255, 0.2);
+}
+#footerPlayer .opb-volume::-webkit-slider-thumb {
+	width: 12px;
+	height: 12px;
+	margin-top: -4px;
+	border: 0;
+	border-radius: 50%;
+	appearance: none;
+	background: #fff;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+#footerPlayer .opb-volume:is(:hover, :focus-visible, :active)::-webkit-slider-thumb {
+	opacity: 1;
+}
+#footerPlayer .opb-volume:focus-visible {
+	outline: 2px solid rgba(255, 255, 255, 0.7);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+/* #endregion */
+
+/* #region Smaller windows (levels set by bar.ts) */
+#footerPlayer[data-office-compact~="badge"] :has(> [data-test^="quality-badge"]) {
+	display: none !important;
+}
+#footerPlayer:not([data-office-compact~="menu"]) .opb-more {
+	display: none !important;
+}
+#footerPlayer[data-office-compact~="menu"] [data-office-in-menu] {
+	display: none !important;
+}
+/* Menu and popup: floating cards above the bar, like the sidebar's Collection menu */
+#footerPlayer :is(.opb-menu, .opb-popup) {
+	position: fixed;
+	z-index: 1000;
+	display: none;
+	box-sizing: border-box;
+	height: 44px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 10px;
+	background: rgba(24, 24, 27, 0.9);
+	box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+	backdrop-filter: blur(24px) saturate(1.4);
+}
+#footerPlayer .opb-menu {
+	left: var(--opb-menu-x, 0px);
+	top: var(--opb-menu-y, 0px);
+	width: calc(var(--opb-count, 0) * 36px + 8px);
+}
+#footerPlayer[data-office-compact~="menu"] [data-office-open="menu"] > .opb-menu {
+	display: block;
+}
+/* The real buttons, laid over the menu: they keep working as before */
+#footerPlayer[data-office-compact~="menu"] [data-office-open="menu"] > [data-office-in-menu] {
+	position: fixed !important;
+	z-index: 1001;
+	left: calc(var(--opb-menu-x, 0px) + 6px + var(--opb-i, 0) * 36px);
+	top: calc(var(--opb-menu-y, 0px) + 6px);
+	display: grid !important;
+}
+#footerPlayer .opb-popup {
+	left: var(--opb-popup-x, 0px);
+	top: var(--opb-popup-y, 0px);
+	align-items: center;
+	gap: 8px;
+	padding: 0 12px 0 6px;
+}
+#footerPlayer[data-office-compact~="volume"] [data-office-open="volume"] > .opb-popup {
+	display: flex;
+}
+/* The bar's slider; the popup has its own */
+#footerPlayer[data-office-compact~="volume"] :has(> [data-test="play-queue-button"]) > :is(.opb-volume, .opb-volume-value) {
+	display: none !important;
+}
+#footerPlayer .opb-popup > :is(.opb-volume, .opb-volume-value) {
+	order: 0;
+}
+#footerPlayer .opb-mute svg {
+	fill: currentColor;
+}
+/* Volume button while its popup is open */
+#footerPlayer [data-office-open="volume"] [data-test="volume"] {
+	background: rgba(255, 255, 255, 0.14) !important;
+	color: #fff !important;
+}
+/* #endregion */
+
+@media (prefers-reduced-motion: reduce) {
+	#footerPlayer #progressBar > :first-child,
+	#footerPlayer .opb-volume::-webkit-slider-thumb {
+		transition: none;
+	}
+}

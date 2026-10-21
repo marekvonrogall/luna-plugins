@@ -1,0 +1,856 @@
+/* Office: play queue */
+.oq-panel {
+	--oq-text: #fff;
+	--oq-dim: rgba(255, 255, 255, 0.58);
+	--oq-faint: rgba(255, 255, 255, 0.4);
+	--oq-hover: rgba(255, 255, 255, 0.07);
+	--oq-base: #141416;
+	position: fixed;
+	display: flex;
+	flex-direction: column;
+	box-sizing: border-box;
+	overflow: hidden;
+	container-type: inline-size;
+	padding-top: var(--oq-head, 0px);
+	color: var(--oq-text);
+	background: var(--oq-base);
+	font-family: inherit;
+	visibility: hidden;
+	opacity: 0;
+	transform: translateX(24px);
+	pointer-events: none;
+	transition:
+		opacity 0.2s ease,
+		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+		visibility 0s linear 0.28s;
+}
+.oq-panel.is-open {
+	visibility: visible;
+	opacity: 1;
+	transform: none;
+	pointer-events: auto;
+	transition:
+		opacity 0.2s ease,
+		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Blocks behind TIDAL's header, above the queue and for search results */
+.oq-block {
+	position: fixed;
+	box-sizing: border-box;
+	background: #18181b;
+	border-left: 1px solid rgba(255, 255, 255, 0.06);
+	pointer-events: none;
+	visibility: hidden;
+	opacity: 0;
+	transition:
+		opacity 0.2s ease,
+		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+		visibility 0s linear 0.28s;
+}
+.oq-block.is-open {
+	visibility: visible;
+	opacity: 1;
+	transform: none;
+	transition:
+		opacity 0.2s ease,
+		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Over the full-screen view, which hides the block */
+.oq-search-popover.oq-over-view {
+	background: #18181b !important;
+	border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+.oq-search-block {
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	transition-duration: 0.15s;
+}
+/* Looks like TIDAL's "View all results for …" row (its classes), only placed by us */
+.oq-search-hint {
+	position: absolute !important;
+	left: 0 !important;
+	right: 0 !important;
+	box-sizing: border-box;
+	margin: 0 !important;
+	width: auto !important;
+	pointer-events: none !important;
+	cursor: default !important;
+}
+/* Until TIDAL's row has been seen; zero specificity so its classes win */
+:where(.oq-search-hint) {
+	display: flex;
+	align-items: center;
+	padding: 12px 16px;
+}
+.oq-search-hint[hidden] {
+	display: none;
+}
+/* Less space above "Recent Searches" */
+.oq-search-popover [class^="_recentSearches"] {
+	padding-top: 10px !important;
+}
+/* TIDAL's search results: the box is the search block, only TIDAL's own list inside scrolls */
+.oq-search-popover {
+	position: fixed !important;
+	right: auto !important;
+	bottom: auto !important;
+	box-sizing: border-box !important;
+	display: block !important;
+	max-height: none !important;
+	min-height: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	overflow: hidden !important;
+	transform: none !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	/* Clicks pass through where the search bar sits, only the list below it takes them */
+	pointer-events: none !important;
+	-webkit-app-region: no-drag !important;
+	/* Above TIDAL's invisible click-anywhere-to-close layer */
+	z-index: 1000 !important;
+}
+.oq-search-popover > *::-webkit-scrollbar {
+	display: none;
+}
+/* Full-screen view buttons (Similar tracks, Credits, Lyrics…): a bit tighter, so they fit above the queue */
+.oq-fs-buttons,
+.oq-fs-buttons > * {
+	column-gap: 0.3em !important;
+	gap: 0.3em !important;
+}
+.oq-fs-buttons :is([data-test="toggle-similar-tracks"], [data-test="toggle-credits"], [data-test="toggle-lyrics"], .oq-lyrics-missing) {
+	padding-left: 0.85em !important;
+	padding-right: 0.85em !important;
+}
+/* The search field fills the widened search bar */
+#mainHeader [data-test="search-popover-container"][data-office-fitted] > [data-type="search-field"] {
+	flex: 1 1 auto;
+	min-width: 0;
+	pointer-events: auto;
+}
+/* TIDAL's own box inside: no gap above it, no rounded corners */
+.oq-search-popover > * {
+	pointer-events: auto !important;
+	box-sizing: border-box !important;
+	/* Exactly as wide as the search block (TIDAL's list is made for its own, wider popup) */
+	left: 0 !important;
+	right: auto !important;
+	width: 100% !important;
+	min-width: 0 !important;
+	max-width: 100% !important;
+	min-height: 0 !important;
+	/* Fills the block and scrolls (without a scrollbar running behind the search bar) */
+	overflow-x: hidden !important;
+	overflow-y: auto !important;
+	scrollbar-width: none !important;
+	margin-top: 0 !important;
+	padding-top: 0 !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+}
+.oq-panel *,
+.oq-panel *::before,
+.oq-panel *::after {
+	box-sizing: border-box;
+}
+.oq-panel [hidden] {
+	display: none !important;
+}
+.oq-probe {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 0;
+	height: 0;
+	pointer-events: none;
+}
+.oq-panel a {
+	color: inherit;
+	text-decoration: none;
+	cursor: pointer;
+}
+.oq-panel a[href]:hover {
+	text-decoration: underline;
+}
+.oq-panel button {
+	font: inherit;
+}
+.oq-panel :focus-visible {
+	outline: 2px solid rgba(255, 255, 255, 0.7);
+	outline-offset: 2px;
+}
+
+/* Top section, up to the title bar: part of the queue, flies in with it */
+.oq-cap {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 6;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: var(--oq-head, 0px);
+	overflow: hidden;
+	background: #18181b;
+	border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+.oq-panel.is-joined .oq-cap {
+	border-left-color: transparent;
+}
+/* The queue's left edge, below the top section */
+.oq-panel::after {
+	content: "";
+	position: absolute;
+	top: var(--oq-head, 0px);
+	bottom: 0;
+	left: 0;
+	z-index: 7;
+	width: 1px;
+	background: rgba(255, 255, 255, 0.06);
+	pointer-events: none;
+}
+/* Full-screen view buttons in the top section */
+.oq-cap-buttons {
+	display: none;
+	align-items: center;
+	gap: 0.3em;
+}
+.oq-cap.has-buttons .oq-cap-buttons {
+	display: flex;
+}
+/* …or in the pinned navigation bar */
+.oq-header-buttons {
+	position: fixed;
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	font-family: inherit;
+}
+.oq-header-buttons .oq-cap-buttons {
+	display: flex;
+}
+.oq-cap-group {
+	display: flex;
+	align-items: center;
+	gap: 0.3em;
+}
+.oq-cap-btn {
+	height: 32px;
+	padding: 0 0.85em;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.7);
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background 0.15s,
+		color 0.15s;
+}
+.oq-cap-btn:hover {
+	color: #fff;
+}
+.oq-cap-btn.is-active {
+	background: #fff;
+	color: #000;
+}
+.oq-cap-buttons.is-loose,
+.oq-cap-buttons.is-loose .oq-cap-group {
+	gap: calc(0.45em + var(--oq-cap-extra, 0px));
+}
+.oq-cap-buttons.is-loose .oq-cap-btn:not(.oq-cap-btn--icon) {
+	padding: 0 0.95em;
+}
+.oq-cap-buttons.is-snug,
+.oq-cap-buttons.is-snug .oq-cap-group {
+	gap: calc(0.25em + var(--oq-cap-extra, 0px));
+}
+.oq-cap-buttons.is-snug .oq-cap-btn:not(.oq-cap-btn--icon) {
+	padding: 0 0.75em;
+}
+.oq-cap-buttons.is-tight,
+.oq-cap-buttons.is-tight .oq-cap-group {
+	gap: calc(0.1em + var(--oq-cap-extra, 0px));
+}
+.oq-cap-buttons.is-tight .oq-cap-btn:not(.oq-cap-btn--icon) {
+	padding: 0 0.6em;
+}
+.oq-cap-buttons.is-tighter .oq-cap-btn {
+	font-size: 12.5px;
+}
+.oq-cap-btn--icon {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	padding: 0;
+}
+.oq-cap-btn--icon:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+.oq-cap-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+	pointer-events: none;
+}
+/* TIDAL's own row when the queue covers it, and the greyed-out Lyrics button when a song has none */
+.oq-row-covered {
+	visibility: hidden !important;
+}
+.oq-lyrics-missing {
+	opacity: 0.35 !important;
+	pointer-events: none !important;
+}
+
+/* Cover colors bleeding through the whole panel */
+.oq-ambient {
+	position: absolute;
+	inset: 0;
+	top: var(--oq-head, 0px);
+	overflow: hidden;
+	pointer-events: none;
+}
+.oq-ambient img {
+	position: absolute;
+	inset: -25%;
+	width: 150%;
+	height: 150%;
+	object-fit: cover;
+	filter: blur(70px) saturate(1.6) brightness(0.6);
+	opacity: 0;
+	transition: opacity 0.7s ease;
+}
+.oq-ambient img.is-in {
+	opacity: 0.85;
+}
+.oq-ambient::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(180deg, rgba(14, 14, 16, 0.2) 0%, rgba(14, 14, 16, 0.6) 40%, rgba(14, 14, 16, 0.84) 100%);
+}
+.oq-panel.no-tint .oq-ambient {
+	display: none;
+}
+
+.oq-scroll {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding-bottom: 16px;
+	scrollbar-width: none;
+}
+.oq-scroll::-webkit-scrollbar {
+	display: none;
+}
+
+/* Floating scrollbar, starting below the cover */
+.oq-scrollbar {
+	position: absolute;
+	right: 0;
+	z-index: 6;
+	width: 12px;
+	cursor: default;
+}
+.oq-thumb {
+	position: absolute;
+	top: 0;
+	right: 3px;
+	width: 4px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.28);
+	transition:
+		width 0.15s,
+		background 0.15s;
+}
+.oq-scrollbar:hover .oq-thumb,
+.oq-scrollbar.is-dragging .oq-thumb {
+	width: 7px;
+	background: rgba(255, 255, 255, 0.5);
+}
+
+/* Current song */
+.oq-hero {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 1;
+	max-height: 46vh;
+	overflow: hidden;
+	isolation: isolate;
+	background: rgba(255, 255, 255, 0.04);
+}
+.oq-hero-covers img {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	opacity: 0;
+	transition: opacity 0.5s ease;
+}
+.oq-hero-covers img.is-in {
+	opacity: 1;
+}
+.oq-hero::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background: linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.8) 100%);
+}
+.oq-hero-top {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 12px 12px 0 18px;
+}
+.oq-source {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.82);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+.oq-source b {
+	color: #fff;
+	font-weight: 600;
+}
+.oq-icon-btn {
+	display: grid;
+	flex: none;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.3);
+	color: #fff;
+	cursor: pointer;
+	backdrop-filter: blur(12px);
+	transition: background 0.15s;
+}
+.oq-icon-btn:hover {
+	background: rgba(0, 0, 0, 0.55);
+}
+.oq-icon-btn--flat {
+	background: transparent;
+	backdrop-filter: none;
+}
+.oq-icon-btn--flat:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+.oq-hero-meta {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 2;
+	padding: 0 20px 22px;
+	text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45);
+}
+.oq-hero-title {
+	display: -webkit-box;
+	overflow: hidden;
+	font-size: clamp(22px, 8cqw, 36px);
+	font-weight: 700;
+	line-height: 1.08;
+	letter-spacing: -0.015em;
+	text-wrap: balance;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+.oq-hero.is-empty .oq-hero-title {
+	color: var(--oq-dim);
+}
+.oq-hero-artists {
+	margin-top: 8px;
+	overflow: hidden;
+	font-size: 15px;
+	font-weight: 500;
+	color: rgba(255, 255, 255, 0.9);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.oq-hero-album {
+	display: block;
+	width: fit-content;
+	max-width: 100%;
+	margin-top: 3px;
+	overflow: hidden;
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.62);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.oq-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 2;
+	height: 3px;
+	background: rgba(255, 255, 255, 0.16);
+}
+.oq-progress i {
+	display: block;
+	height: 100%;
+	background: #fff;
+	transform: scaleX(0);
+	transform-origin: left;
+	transition: transform 0.5s linear;
+}
+.oq-hero.is-empty .oq-progress,
+.oq-hero.is-empty .oq-hero-top .oq-source {
+	display: none;
+}
+
+/* Compact bar once the current song is scrolled away */
+.oq-mini {
+	position: absolute;
+	top: var(--oq-head, 0px);
+	left: 0;
+	right: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	height: 56px;
+	padding: 0 8px 0 12px;
+	background: rgba(20, 20, 22, 0.72);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	backdrop-filter: blur(24px) saturate(1.4);
+	transform: translateY(-101%);
+	transition: transform 0.22s ease;
+}
+.oq-mini.is-shown {
+	transform: none;
+}
+.oq-mini-cover {
+	flex: none;
+	width: 36px;
+	height: 36px;
+	border-radius: 4px;
+	object-fit: cover;
+	background: rgba(255, 255, 255, 0.06);
+}
+.oq-mini-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+	padding: 4px 6px;
+	border: 0;
+	background: none;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.oq-mini-title,
+.oq-mini-artist {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.oq-mini-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+.oq-mini-artist {
+	font-size: 12px;
+	color: var(--oq-dim);
+}
+
+/* Section headings */
+.oq-head {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin-bottom: 6px;
+	padding: 0 12px 0 20px;
+}
+.oq-head h3 {
+	flex: none;
+	margin: 0;
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--oq-text);
+}
+.oq-head-detail {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: var(--oq-faint);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.oq-text-btn {
+	flex: none;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: var(--oq-dim);
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.oq-text-btn:hover {
+	background: rgba(255, 255, 255, 0.08);
+	color: #fff;
+}
+
+/* Recently played: a strip of covers */
+.oq-recent {
+	padding-top: 18px;
+}
+.oq-strip {
+	display: flex;
+	gap: 8px;
+	overflow-x: auto;
+	padding: 2px 20px 8px;
+	scrollbar-width: none;
+	--oq-fade-left: 0px;
+	--oq-fade-right: 0px;
+	-webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--oq-fade-left), #000 calc(100% - var(--oq-fade-right)), transparent);
+	mask-image: linear-gradient(90deg, transparent, #000 var(--oq-fade-left), #000 calc(100% - var(--oq-fade-right)), transparent);
+}
+.oq-strip.fade-left {
+	--oq-fade-left: 40px;
+}
+.oq-strip.fade-right {
+	--oq-fade-right: 40px;
+}
+.oq-strip::-webkit-scrollbar {
+	display: none;
+}
+.oq-strip-item {
+	position: relative;
+	flex: none;
+	width: 52px;
+	height: 52px;
+	padding: 0;
+	overflow: hidden;
+	border: 0;
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.06);
+	cursor: pointer;
+}
+.oq-strip-item img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	transition: transform 0.2s ease;
+}
+.oq-strip-play {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgba(0, 0, 0, 0.45);
+	color: #fff;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.oq-strip-item:hover .oq-strip-play,
+.oq-strip-item:focus-visible .oq-strip-play {
+	opacity: 1;
+}
+.oq-strip-item:hover img,
+.oq-strip-item:focus-visible img {
+	transform: scale(1.08);
+}
+
+/* Upcoming songs */
+.oq-section {
+	padding-top: 18px;
+}
+.oq-list {
+	position: relative;
+	padding: 0 8px;
+}
+/* Placed by index (only the visible ones exist) */
+.oq-list > .oq-row {
+	position: absolute;
+	left: 8px;
+	right: 8px;
+}
+.oq-row {
+	position: relative;
+	display: grid;
+	grid-template-columns: 40px minmax(0, 1fr) auto;
+	column-gap: 12px;
+	align-items: center;
+	height: 52px;
+	padding: 0 6px 0 12px;
+	border-radius: 6px;
+	cursor: default;
+	user-select: none;
+}
+.oq-row:hover,
+.oq-row:focus-visible {
+	background: var(--oq-hover);
+}
+.oq-row:focus-visible {
+	outline-offset: -2px;
+}
+.oq-list--history .oq-row-btn[data-action="remove"] {
+	display: none;
+}
+.oq-cover-wrap {
+	position: relative;
+	width: 40px;
+	height: 40px;
+	overflow: hidden;
+	border-radius: 4px;
+}
+.oq-cover {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	background: rgba(255, 255, 255, 0.06);
+}
+.oq-cover-play {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgba(0, 0, 0, 0.5);
+	color: #fff;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.oq-row:hover .oq-cover-play,
+.oq-row:focus-visible .oq-cover-play {
+	opacity: 1;
+}
+.oq-panel.is-dragging .oq-cover-play {
+	opacity: 0;
+}
+.oq-title,
+.oq-artist {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.oq-title {
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1.3;
+}
+.oq-artist {
+	margin-top: 1px;
+	font-size: 12.5px;
+	color: var(--oq-dim);
+}
+.oq-end {
+	display: flex;
+	justify-content: flex-end;
+	min-width: 36px;
+}
+.oq-dur {
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: var(--oq-faint);
+}
+.oq-actions {
+	display: none;
+	gap: 2px;
+}
+.oq-row:hover .oq-dur,
+.oq-row:focus-within .oq-dur {
+	display: none;
+}
+.oq-row:hover .oq-actions,
+.oq-row:focus-within .oq-actions {
+	display: flex;
+}
+.oq-row-btn {
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: none;
+	color: rgba(255, 255, 255, 0.75);
+	cursor: pointer;
+}
+.oq-row-btn:hover {
+	background: rgba(255, 255, 255, 0.12);
+	color: #fff;
+}
+
+/* Reordering */
+.oq-panel.is-dragging,
+.oq-panel.is-dragging * {
+	cursor: grabbing !important;
+}
+.oq-panel.is-dragging .oq-row:hover {
+	background: none;
+}
+.oq-row.is-dragging {
+	opacity: 0.35;
+}
+.oq-row.drop-before::before,
+.oq-row.drop-after::after {
+	content: "";
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	height: 2px;
+	border-radius: 2px;
+	background: #fff;
+}
+.oq-row.drop-before::before {
+	top: -1px;
+}
+.oq-row.drop-after::after {
+	bottom: -1px;
+}
+
+.oq-empty {
+	margin: 0;
+	padding: 24px 20px;
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--oq-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.oq-panel,
+	.oq-panel.is-open,
+	.oq-mini,
+	.oq-hero-covers img,
+	.oq-ambient img,
+	.oq-block,
+	.oq-block.is-open {
+		transition: none;
+	}
+	.oq-panel {
+		transform: none;
+	}
+}

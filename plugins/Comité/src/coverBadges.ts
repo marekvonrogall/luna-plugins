@@ -49,6 +49,7 @@ a[data-test="cell-cover"]:hover .${BADGE}[data-variant="tiny"] { opacity: 0; }
 .comite-badge-ring rect { width: calc(100% - 1.5px); height: calc(100% - 1.5px); stroke-width: 1.5px; }
 .comite-badge-ring .track { stroke: rgba(255, 255, 255, 0.18); }
 .comite-badge-ring .bar { stroke: #ffd432; stroke-dasharray: 100; transition: stroke-dashoffset 0.35s ease-out; }
+.${BADGE}[data-role="solo"] .comite-badge-ring .bar { stroke: #ff8cc6; }
 `;
 
 type Variant = "grid" | "large" | "inline";

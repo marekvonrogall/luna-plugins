@@ -1,6 +1,7 @@
 import { MediaItem, observe, StyleTag } from "@luna/lib";
 
 import { addPlaylistPickerStyles } from "../../../shared/playlistPicker";
+import { keepPlaylistsFresh } from "../../../shared/playlistSync";
 import { trace, unloads } from "./core";
 import { RATE_MODE_CSS, startRatingMode } from "./rateMode";
 import { FAVORITES_RATE_CSS, setupRateButton } from "./rateButton";
@@ -13,112 +14,108 @@ import { stars } from "./store";
 export { errSignal, trace, unloads } from "./core";
 export { Settings } from "./Settings";
 
-const COMITÉ = "comité-controls";
+const BUTTON = "comite-rate-button";
 const POPOVER = "comité-popover";
-/** Below this width of the track info, the five stars collapse into one button so title and artist stay readable */
-const COMPACT_BELOW = 320;
+/** Outline star; filled through CSS once the song is rated */
+const STAR = '<path d="M12 3.2l2.6 5.5 6 .7-4.4 4.1 1.2 6L12 16.6 6.6 19.5l1.2-6-4.4-4.1 6-.7z" stroke-width="1.6" stroke-linejoin="round"/>';
 
 new StyleTag(
 	"Comité",
 	unloads,
 	`${STAR_ROW_CSS}
-#${COMITÉ} { display: inline-flex; flex: none; align-items: center; }
-.comite-compact { display: none; padding: 0 4px; border: none; background: none; color: inherit; font-size: 15px; white-space: nowrap; cursor: pointer; opacity: 0.7; }
-.comite-compact[data-rated="true"] { opacity: 1; }
-#${COMITÉ}.comite-compact-mode .comite-starrow { display: none; }
-#${COMITÉ}.comite-compact-mode .comite-compact { display: inline-flex; }
-#${POPOVER} { position: fixed; z-index: 100000; display: flex; padding: 8px 10px; border-radius: 8px; background: #1c1c1f; color: #fff; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); --star-gap: 6px; }
+#${BUTTON} { position: relative; }
+#${BUTTON} svg path { fill: none; stroke: currentColor; }
+#${BUTTON}[data-rated="true"] svg path { fill: #ffd432; stroke: #ffd432; }
+#${BUTTON} .comite-rate-value { position: absolute; right: -2px; bottom: -1px; padding: 0 3px; border-radius: 4px; background: rgba(16, 16, 18, 0.92); color: #fff; font-size: 9px; font-weight: 700; line-height: 12px; font-variant-numeric: tabular-nums; pointer-events: none; }
+#${BUTTON} .comite-rate-value:empty { display: none; }
+#${POPOVER} { position: fixed; z-index: 100000; display: flex; padding: 8px 10px; border-radius: 8px; background: #1c1c1f; color: #fff; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); --star-size: 22px; --star-gap: 6px; }
 `,
 );
 addPlaylistPickerStyles("Comité", unloads);
+keepPlaylistsFresh(unloads);
 new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS + RATING_COLUMN_CSS + COVER_BADGE_CSS);
 
 let currentTrackId: string | undefined;
 
-/** Star rows on screen: the player bar and, while open, the compact popover */
-const rows = new Set<StarRow>();
+/** The popover's star row, while open */
+let row: StarRow | undefined;
+
+const button = document.createElement("button");
+button.id = BUTTON;
+button.type = "button";
+button.setAttribute("aria-haspopup", "true");
+button.setAttribute("aria-expanded", "false");
+button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${STAR}</svg><span class="comite-rate-value"></span>`;
+const value = button.querySelector<HTMLElement>(".comite-rate-value")!;
 
 const render = () => {
-	const currentRating = currentTrackId === undefined ? 0 : shownRating(currentTrackId);
-	const disabled = currentTrackId === undefined || isSaving(currentTrackId);
-	for (const row of rows) {
-		if (!row.element.isConnected) {
-			rows.delete(row);
-			continue;
-		}
-		row.setValue(currentRating);
-		row.setDisabled(disabled);
-	}
-	const compact = document.querySelector<HTMLButtonElement>(`#${COMITÉ} .comite-compact`);
-	if (compact) {
-		compact.textContent = currentRating > 0 ? `★ ${currentRating}` : "☆";
-		compact.dataset.rated = String(currentRating > 0);
-		compact.title = currentRating > 0 ? `Rated ${stars(currentRating)}` : "Rate this song";
-	}
-};
-
-const closePopover = () => document.getElementById(POPOVER)?.remove();
-
-/** The five stars, shown above the compact button */
-const openPopover = (anchor: HTMLElement) => {
-	closePopover();
-	const popover = document.createElement("div");
-	popover.id = POPOVER;
-	const row = createStarRow((value) => {
-		closePopover();
-		rate(value);
-	});
-	rows.add(row);
-	popover.appendChild(row.element);
-	document.body.appendChild(popover);
-	const rect = anchor.getBoundingClientRect();
-	popover.style.left = `${Math.max(8, rect.left)}px`;
-	popover.style.top = `${rect.top - popover.offsetHeight - 8}px`;
-	render();
-
-	const onOutside = (e: MouseEvent) => {
-		if (popover.contains(e.target as Node) || anchor.contains(e.target as Node)) return;
-		closePopover();
-		document.removeEventListener("mousedown", onOutside, true);
-	};
-	document.addEventListener("mousedown", onOutside, true);
+	const rating = currentTrackId === undefined ? 0 : shownRating(currentTrackId);
+	button.disabled = currentTrackId === undefined;
+	button.dataset.rated = String(rating > 0);
+	value.textContent = rating > 0 ? String(rating) : "";
+	const label = rating > 0 ? `Rated ${stars(rating)} (${rating})` : "Rate this song";
+	button.title = label;
+	button.setAttribute("aria-label", label);
+	if (row && !row.element.isConnected) row = undefined;
+	row?.setValue(rating);
+	row?.setDisabled(currentTrackId === undefined || isSaving(currentTrackId));
 };
 
 const rate = (rating: number) => {
 	if (currentTrackId !== undefined) rateTrack(currentTrackId, rating);
 };
 
-let resizeObserver: ResizeObserver | undefined;
+let closeListeners: (() => void) | undefined;
+const closePopover = () => {
+	document.getElementById(POPOVER)?.remove();
+	row = undefined;
+	button.setAttribute("aria-expanded", "false");
+	closeListeners?.();
+	closeListeners = undefined;
+};
 
-function loadComité(): void {
-	if (document.getElementById(COMITÉ)) return;
-
-	const trackInfo = document.querySelector('[data-test="track-info"]');
-	if (!trackInfo) return;
-	const trackContent = trackInfo.querySelector<HTMLElement>('div[class*="_trackContent_"]');
-	if (!trackContent) return;
-
-	const wrapper = document.createElement("div");
-	wrapper.id = COMITÉ;
-
-	const row = createStarRow(rate);
-	rows.add(row);
-
-	const compact = document.createElement("button");
-	compact.className = "comite-compact";
-	compact.addEventListener("click", () => (document.getElementById(POPOVER) ? closePopover() : openPopover(compact)));
-
-	wrapper.append(row.element, compact);
-	trackContent.appendChild(wrapper);
-
-	// Collapse to the compact button when the player gets narrow
-	resizeObserver?.disconnect();
-	resizeObserver = new ResizeObserver(() => {
-		wrapper.classList.toggle("comite-compact-mode", trackInfo.getBoundingClientRect().width < COMPACT_BELOW);
+/** The five stars, above the button */
+const openPopover = () => {
+	closePopover();
+	const popover = document.createElement("div");
+	popover.id = POPOVER;
+	row = createStarRow((rating) => {
+		closePopover();
+		rate(rating);
 	});
-	resizeObserver.observe(trackInfo);
+	popover.appendChild(row.element);
+	document.body.appendChild(popover);
+	const rect = button.getBoundingClientRect();
+	const left = rect.left + rect.width / 2 - popover.offsetWidth / 2;
+	popover.style.left = `${Math.max(8, Math.min(left, window.innerWidth - popover.offsetWidth - 8))}px`;
+	popover.style.top = `${Math.max(8, rect.top - popover.offsetHeight - 8)}px`;
+	button.setAttribute("aria-expanded", "true");
 	render();
-}
+
+	const onOutside = (e: MouseEvent) => {
+		if (!popover.contains(e.target as Node) && !button.contains(e.target as Node)) closePopover();
+	};
+	const onKey = (e: KeyboardEvent) => e.key === "Escape" && closePopover();
+	document.addEventListener("mousedown", onOutside, true);
+	document.addEventListener("keydown", onKey, true);
+	window.addEventListener("resize", closePopover);
+	closeListeners = () => {
+		document.removeEventListener("mousedown", onOutside, true);
+		document.removeEventListener("keydown", onKey, true);
+		window.removeEventListener("resize", closePopover);
+	};
+};
+button.addEventListener("click", () => (document.getElementById(POPOVER) ? closePopover() : openPopover()));
+
+/** Right after the queue button among the player bar's buttons (TIDAL's, or Office's) */
+const mountButton = () => {
+	const queue = document.querySelector('#footerPlayer [data-test="play-queue-button"]');
+	if (!queue?.parentElement || button.parentElement === queue.parentElement) return;
+	// Sized like its neighbours' icons
+	const icon = queue.querySelector("svg")?.getAttribute("class");
+	if (icon) button.querySelector("svg")!.setAttribute("class", icon);
+	queue.after(button);
+};
 
 const onTrack = (mediaItem?: MediaItem) => {
 	currentTrackId = mediaItem === undefined ? undefined : String(mediaItem.id);
@@ -132,8 +129,8 @@ ratingListeners.add(render);
 setupRateButton(unloads, startRatingMode);
 setupRatingColumn(unloads);
 setupCoverBadges(unloads);
-observe(unloads, "#footerPlayer", loadComité);
-loadComité();
+observe(unloads, '#footerPlayer [data-test="play-queue-button"]', mountButton);
+mountButton();
 MediaItem.onMediaTransition(unloads, onTrack);
 MediaItem.fromPlaybackContext()
 	.then(onTrack)
@@ -142,9 +139,7 @@ MediaItem.fromPlaybackContext()
 validateRatingPlaylists().finally(refreshRatings);
 
 unloads.add(() => {
-	resizeObserver?.disconnect();
 	closePopover();
-	document.getElementById(COMITÉ)?.remove();
+	button.remove();
 	ratingListeners.clear();
-	rows.clear();
 });

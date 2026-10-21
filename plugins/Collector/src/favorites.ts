@@ -21,20 +21,27 @@ const findHeading = () =>
 
 const closeMenu = () => document.getElementById(MENU_ID)?.remove();
 
-const openMenu = (button: HTMLElement, onCollect: () => void) => {
+export interface FavoritesAction {
+	label: string;
+	onClick: () => void;
+}
+
+const openMenu = (button: HTMLElement, actions: FavoritesAction[]) => {
 	closeMenu();
 	const menu = document.createElement("div");
 	menu.id = MENU_ID;
 	menu.className = "collector-menu";
 
-	const item = document.createElement("button");
-	item.className = "collector-menu-item";
-	item.textContent = "Collect";
-	item.addEventListener("click", () => {
-		closeMenu();
-		onCollect();
-	});
-	menu.appendChild(item);
+	for (const { label, onClick } of actions) {
+		const item = document.createElement("button");
+		item.className = "collector-menu-item";
+		item.textContent = label;
+		item.addEventListener("click", () => {
+			closeMenu();
+			onClick();
+		});
+		menu.appendChild(item);
+	}
 
 	const rect = button.getBoundingClientRect();
 	menu.style.top = `${rect.bottom + 6}px`;
@@ -57,7 +64,7 @@ const openMenu = (button: HTMLElement, onCollect: () => void) => {
 	}).observe(document.body, { childList: true });
 };
 
-const createButton = (onCollect: () => void) => {
+const createButton = (actions: FavoritesAction[]) => {
 	const button = document.createElement("button");
 	button.id = BUTTON_ID;
 	button.className = "collector-more";
@@ -67,13 +74,13 @@ const createButton = (onCollect: () => void) => {
 		e.preventDefault();
 		e.stopPropagation();
 		if (document.getElementById(MENU_ID)) closeMenu();
-		else openMenu(button, onCollect);
+		else openMenu(button, actions);
 	});
 	return button;
 };
 
-/** Adds a "..." menu with "Collect" to the favorite tracks page */
-export const setupFavoritesButton = (unloads: LunaUnloads, onCollect: () => void) => {
+/** Adds a "..." menu with the collect actions to the favorite tracks page */
+export const setupFavoritesButton = (unloads: LunaUnloads, actions: FavoritesAction[]) => {
 	let queued = false;
 
 	const ensureButton = () => {
@@ -88,7 +95,7 @@ export const setupFavoritesButton = (unloads: LunaUnloads, onCollect: () => void
 		const heading = findHeading();
 		if (existing?.isConnected && (heading === null || heading.contains(existing))) return;
 
-		const button = existing ?? createButton(onCollect);
+		const button = existing ?? createButton(actions);
 		if (heading !== null) {
 			button.classList.remove("collector-more-floating");
 			heading.appendChild(button);

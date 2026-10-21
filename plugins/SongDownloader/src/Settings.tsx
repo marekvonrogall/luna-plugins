@@ -5,7 +5,7 @@ import { LunaButtonSetting, LunaNumber, LunaSelectItem, LunaSelectSetting, LunaS
 import React from "react";
 import { getDownloadFolder } from "./helpers";
 
-const defaultFilenameFormat = "{artist} - {album} - {title}";
+const defaultFilenameFormat = "{artist}/{album}/{title}";
 
 type Settings = {
 	downloadQuality: redux.AudioQuality;

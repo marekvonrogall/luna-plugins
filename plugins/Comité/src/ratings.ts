@@ -1,7 +1,8 @@
 import { redux } from "@luna/lib";
 
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
-import { addTrack, getPlaylistInfo, getUserPlaylists, refreshPlaylistView, removeTrack, waitForLogin } from "./api";
+import { syncPlaylist } from "../../../shared/playlistSync";
+import { addTrack, getPlaylistInfo, getUserPlaylists, removeTrack, waitForLogin } from "./api";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
 import { canonicalId, getRatingPlaylist, idsOfSong, linkTrackIds, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
@@ -14,6 +15,8 @@ let loading: Promise<void> | undefined;
 
 /** Called whenever the cached ratings changed, so the stars can re-render */
 export const ratingListeners = new Set<() => void>();
+/** Told about our own playlist edits, so caches get patched instead of re-read */
+export const ownEditListeners = new Set<(uuid: string, added: string[], removed: string[]) => void>();
 let changes = 0;
 const notify = () => {
 	changes++;
@@ -181,6 +184,7 @@ export const applyRating = async (trackId: string, rating: number) => {
 	let id = canonicalId(trackId);
 	const target = rating === 0 ? undefined : getRatingPlaylist(rating);
 	if (!trackMeta.has(id)) rememberTrack(redux.store.getState().content.mediaItems[id]?.item ?? redux.store.getState().content.mediaItems[trackId]?.item);
+	const edits = new Map<string, { added: string[]; removed: string[] }>();
 	if (target !== undefined) {
 		const added = await addTrack(target.uuid, id);
 		// TIDAL stored the current id instead of an old one
@@ -193,7 +197,8 @@ export const applyRating = async (trackId: string, rating: number) => {
 		}
 		if (!cache.has(rating)) cache.set(rating, new Set());
 		cache.get(rating)!.add(id);
-		refreshPlaylistView(target.uuid);
+		// Nothing added if it was already there
+		if (added === undefined || added.length > 0) edits.set(target.uuid, { added: added ?? [id], removed: [] });
 	}
 	const ids = idsOfSong(id);
 	for (const other of RATINGS) {
@@ -204,7 +209,11 @@ export const applyRating = async (trackId: string, rating: number) => {
 		if (playlist === undefined || playlist.uuid === target?.uuid) continue;
 		await removeTrack(playlist.uuid, ids);
 		for (const each of ids) cached!.delete(each);
-		refreshPlaylistView(playlist.uuid);
+		edits.set(playlist.uuid, { added: [], removed: ids });
+	}
+	for (const [uuid, { added, removed }] of edits) {
+		for (const listener of ownEditListeners) listener(uuid, added, removed);
+		syncPlaylist(uuid);
 	}
 	notify();
 };

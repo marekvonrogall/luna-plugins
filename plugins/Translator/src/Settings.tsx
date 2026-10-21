@@ -15,7 +15,6 @@ export const settings = await ReactiveStore.getPluginStorage<Settings>("Translat
 	targetLanguage: defaultTarget(),
 	neverTranslate: [],
 });
-settings.neverTranslate ??= [];
 
 export const settingsListeners = new Set<() => void>();
 const changed = () => settingsListeners.forEach((listener) => listener());
