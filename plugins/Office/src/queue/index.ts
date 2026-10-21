@@ -64,6 +64,12 @@ const HIT = '[data-test*="-direct-hit-"]:not([data-test*="--"])';
 const HIT_LINE = `${HIT} [data-wave-number-of-lines]:has(> a)`;
 const HIT_ROW = `${HIT} :has(> [data-wave-number-of-lines] > a)`;
 const TITLE_LINE = `${TITLE_LINK} [data-wave-number-of-lines], ${HIT_LINE}`;
+/** Artist line under the title: its own element while typing, a clamped line in recent searches */
+const ARTIST_LINK = '[data-test="grid-item-detail-text-title-artist"]';
+const HIT_ARTISTS = `${HIT} :has(> ${ARTIST_LINK})`;
+const RECENT_ARTISTS = `[data-wave-number-of-lines]:has(${ARTIST_LINK})`;
+const ARTIST_LINE = `${HIT_ARTISTS}, ${RECENT_ARTISTS}`;
+const SCROLLING_LINES = `${TITLE_LINE}, ${ARTIST_LINE}`;
 /** Titles as wide as their text, badge right behind, scrolling instead of "…". Unwrapped titles need every box up to the row to shrink. */
 const SEARCH_TITLE_CSS = `
 .oq-search-popover :has(> ${TITLE_LINK}) { display: flex !important; align-items: center !important; justify-content: flex-start !important; gap: 6px !important; min-width: 0 !important; }
@@ -76,6 +82,11 @@ const SEARCH_TITLE_CSS = `
 .oq-search-popover ${HIT_ROW} > :not([data-wave-number-of-lines]) { flex: none !important; margin-left: 0 !important; }
 .oq-search-popover ${HIT_LINE} { flex: 0 1 auto !important; }
 .oq-search-popover :is(${TITLE_LINE}) { display: block !important; min-width: 0 !important; -webkit-line-clamp: unset !important; line-clamp: unset !important; ${marqueeLine} }
+.oq-search-popover *:has(${ARTIST_LINK}) { min-width: 0 !important; }
+.oq-search-popover :is(${ARTIST_LINE}) { max-width: 100% !important; ${marqueeLine} }
+.oq-search-popover :is(${ARTIST_LINE}) > *, .oq-search-popover :is(${ARTIST_LINE}) ${ARTIST_LINK} { flex-shrink: 0 !important; max-width: none !important; overflow: visible !important; text-overflow: clip !important; }
+.oq-search-popover :is(${RECENT_ARTISTS}) { display: block !important; -webkit-line-clamp: unset !important; line-clamp: unset !important; }
+.oq-search-popover :is(${RECENT_ARTISTS}) > * { display: inline-flex !important; }
 `;
 
 const tidalAside = () => document.getElementById("playQueueSidebar");
@@ -666,6 +677,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	const applySettings = () => {
 		panel.classList.toggle("no-tint", !settings.queueTint);
 		schedule();
+		requestAnimationFrame(() => place());
 	};
 	// #endregion
 
@@ -801,8 +813,12 @@ const createPanel = (unloads: LunaUnloads) => {
 	/** Widens the search bar to start at `left`, keeping the profile picture's right margin */
 	const SEARCH_STYLES = ["width", "min-width", "max-width", "flex"] as const;
 	let fittedSearch: HTMLElement | undefined;
+	const FITTED_SEARCH = "data-office-fitted";
 	const unfitSearch = () => {
-		if (fittedSearch) for (const prop of SEARCH_STYLES) fittedSearch.style.removeProperty(prop);
+		if (fittedSearch) {
+			for (const prop of SEARCH_STYLES) fittedSearch.style.removeProperty(prop);
+			fittedSearch.removeAttribute(FITTED_SEARCH);
+		}
 		fittedSearch = undefined;
 	};
 	const fitSearch = (left: number) => {
@@ -812,6 +828,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (search !== fittedSearch) unfitSearch();
 		if (!search || !picture) return;
 		fittedSearch = search;
+		search.setAttribute(FITTED_SEARCH, "");
 		// Field and cancel button stay clickable above the results and TIDAL's close layer
 		for (const node of search.querySelectorAll<HTMLElement>(':scope > [data-type="search-field"], :scope > [data-test="search-input-cancel"]')) {
 			lift(node);
@@ -919,7 +936,7 @@ const createPanel = (unloads: LunaUnloads) => {
 	const stylePopover = (popover: HTMLElement, left: number, top: number, width: number, maxHeight: number, listTop: number) => {
 		if (popover !== styledPopover) {
 			unstylePopover();
-			stopTitles = startMarquee(popover, TITLE_LINE);
+			stopTitles = startMarquee(popover, SCROLLING_LINES);
 		}
 		styledPopover = popover;
 		popover.classList.add("oq-search-popover");
@@ -934,10 +951,13 @@ const createPanel = (unloads: LunaUnloads) => {
 		list.style.setProperty("top", `${listTop}px`, "important");
 		list.style.setProperty("height", "auto", "important");
 		list.style.setProperty("bottom", "auto", "important");
+		// In px: a percentage of the shrunk popup would keep the list from growing
 		list.style.setProperty("max-height", `${Math.max(0, maxHeight - listTop)}px`, "important");
 		fitRows(list);
+		// Also when empty: the block behind shows the hint then
 		const listHeight = list.getBoundingClientRect().height;
 		popover.style.setProperty("height", `${listHeight > 0 ? Math.ceil(listTop + listHeight) : 0}px`, "important");
+		// The hint copies this row's look
 		const viewAll = list.querySelector<HTMLElement>('[data-test="view-all-results"]');
 		const viewAllText = viewAll?.querySelector("span");
 		if (viewAll && viewAllText && (viewAll.className !== viewAllClasses.row || viewAllText.className !== viewAllClasses.text)) {
@@ -1223,7 +1243,8 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 		const origin = blockProbe.getBoundingClientRect();
 
-		const searchable = fullscreen === undefined || pinned;
+		// Off: TIDAL's own search bar and results
+		const searchable = settings.search && (fullscreen === undefined || pinned);
 		layoutFullscreenButtons(view, queueRect !== undefined, queueLeft, width, closing, pinned);
 
 		// Search block: left of the queue, down to the end of the big cover
@@ -1236,6 +1257,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		panel.classList.toggle("is-joined", searching && queueRect !== undefined);
 
 		if (searchable) fitSearch(searchLeft);
+		else unfitSearch();
 		if (pinned) placeHeaderButtons();
 		if (searching && popover) {
 			// First result lines up with the queue's big cover

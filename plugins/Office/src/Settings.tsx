@@ -5,25 +5,27 @@ import React from "react";
 
 type Settings = {
 	queue: boolean;
-	queueTint: boolean;
-	dockedPlayer: boolean;
-	pinnedCover: boolean;
+	search: boolean;
 	playerBar: boolean;
 	sidebar: boolean;
-	sidebarTint: boolean;
+	dockedPlayer: boolean;
+	pinnedCover: boolean;
 	pinnedSidebar: boolean;
 	pinnedHeader: boolean;
+	queueTint: boolean;
+	sidebarTint: boolean;
 };
 export const settings = await ReactiveStore.getPluginStorage<Settings>("Office", {
 	queue: true,
-	queueTint: true,
-	dockedPlayer: true,
-	pinnedCover: false,
+	search: true,
 	playerBar: true,
 	sidebar: true,
-	sidebarTint: false,
+	dockedPlayer: true,
+	pinnedCover: false,
 	pinnedSidebar: true,
 	pinnedHeader: true,
+	queueTint: true,
+	sidebarTint: false,
 });
 
 export const settingsListeners = new Set<() => void>();
@@ -36,14 +38,15 @@ const Needs = ({ on, children }: { on: boolean; children: React.ReactNode }) => 
 
 export const Settings = () => {
 	const [queue, setQueue] = React.useState(settings.queue);
-	const [queueTint, setQueueTint] = React.useState(settings.queueTint);
-	const [dockedPlayer, setDockedPlayer] = React.useState(settings.dockedPlayer);
-	const [pinnedCover, setPinnedCover] = React.useState(settings.pinnedCover);
+	const [search, setSearch] = React.useState(settings.search);
 	const [playerBar, setPlayerBar] = React.useState(settings.playerBar);
 	const [sidebar, setSidebar] = React.useState(settings.sidebar);
-	const [sidebarTint, setSidebarTint] = React.useState(settings.sidebarTint);
+	const [dockedPlayer, setDockedPlayer] = React.useState(settings.dockedPlayer);
+	const [pinnedCover, setPinnedCover] = React.useState(settings.pinnedCover);
 	const [pinnedSidebar, setPinnedSidebar] = React.useState(settings.pinnedSidebar);
 	const [pinnedHeader, setPinnedHeader] = React.useState(settings.pinnedHeader);
+	const [queueTint, setQueueTint] = React.useState(settings.queueTint);
+	const [sidebarTint, setSidebarTint] = React.useState(settings.sidebarTint);
 
 	return (
 		<LunaSettings>
@@ -58,34 +61,16 @@ export const Settings = () => {
 			/>
 			<Needs on={queue}>
 				<LunaSwitchSetting
-					title="Tint the queue with the cover"
-					desc="Colors the play queue's background with the cover of the current song"
-					checked={queueTint}
+					title="Redesigned search"
+					desc="Replaces TIDAL's search bar with Office's version"
+					checked={search}
 					disabled={!queue}
 					onChange={(_: unknown, checked: boolean) => {
-						setQueueTint((settings.queueTint = checked));
+						setSearch((settings.search = checked));
 						changed();
 					}}
 				/>
 			</Needs>
-			<LunaSwitchSetting
-				title="Keep the player bar docked"
-				desc="Stops the player bar from floating while the full-screen view is open"
-				checked={dockedPlayer}
-				onChange={(_: unknown, checked: boolean) => {
-					setDockedPlayer((settings.dockedPlayer = checked));
-					changed();
-				}}
-			/>
-			<LunaSwitchSetting
-				title="Pinned cover"
-				desc="Keeps the cover in the player bar while the full-screen view is open"
-				checked={pinnedCover}
-				onChange={(_: unknown, checked: boolean) => {
-					setPinnedCover((settings.pinnedCover = checked));
-					changed();
-				}}
-			/>
 			<LunaSwitchSetting
 				title="Redesigned player bar"
 				desc="Replaces TIDAL's player bar with Office's version"
@@ -104,18 +89,24 @@ export const Settings = () => {
 					changed();
 				}}
 			/>
-			<Needs on={sidebar}>
-				<LunaSwitchSetting
-					title="Tint the sidebar with the cover"
-					desc="Colors the sidebar's background with the cover of the current song"
-					checked={sidebarTint}
-					disabled={!sidebar}
-					onChange={(_: unknown, checked: boolean) => {
-						setSidebarTint((settings.sidebarTint = checked));
-						changed();
-					}}
-				/>
-			</Needs>
+			<LunaSwitchSetting
+				title="Pinned player bar"
+				desc="Stops the player bar from floating while the full-screen view is open"
+				checked={dockedPlayer}
+				onChange={(_: unknown, checked: boolean) => {
+					setDockedPlayer((settings.dockedPlayer = checked));
+					changed();
+				}}
+			/>
+			<LunaSwitchSetting
+				title="Pinned cover"
+				desc="Keeps the album artwork in the player bar while the full-screen view is open"
+				checked={pinnedCover}
+				onChange={(_: unknown, checked: boolean) => {
+					setPinnedCover((settings.pinnedCover = checked));
+					changed();
+				}}
+			/>
 			<LunaSwitchSetting
 				title="Pinned sidebar"
 				desc="Always keeps the sidebar visible"
@@ -127,13 +118,37 @@ export const Settings = () => {
 			/>
 			<LunaSwitchSetting
 				title="Pinned navigation bar"
-				desc="Always keeps the bar with the back and forward buttons visible"
+				desc="Always keeps the navbar visible"
 				checked={pinnedHeader}
 				onChange={(_: unknown, checked: boolean) => {
 					setPinnedHeader((settings.pinnedHeader = checked));
 					changed();
 				}}
 			/>
+			<Needs on={queue}>
+				<LunaSwitchSetting
+					title="Queue background tint"
+					desc="Colors the play queue's background with the cover of the current song"
+					checked={queueTint}
+					disabled={!queue}
+					onChange={(_: unknown, checked: boolean) => {
+						setQueueTint((settings.queueTint = checked));
+						changed();
+					}}
+				/>
+			</Needs>
+			<Needs on={sidebar}>
+				<LunaSwitchSetting
+					title="Sidebar background tint"
+					desc="Colors the sidebar's background with the cover of the current song"
+					checked={sidebarTint}
+					disabled={!sidebar}
+					onChange={(_: unknown, checked: boolean) => {
+						setSidebarTint((settings.sidebarTint = checked));
+						changed();
+					}}
+				/>
+			</Needs>
 		</LunaSettings>
 	);
 };

@@ -125,7 +125,7 @@
 	padding-right: 0.85em !important;
 }
 /* The search field fills the widened search bar */
-#mainHeader [data-test="search-popover-container"] > [data-type="search-field"] {
+#mainHeader [data-test="search-popover-container"][data-office-fitted] > [data-type="search-field"] {
 	flex: 1 1 auto;
 	min-width: 0;
 	pointer-events: auto;
