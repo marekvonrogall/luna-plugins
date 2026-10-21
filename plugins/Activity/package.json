@@ -1,6 +1,6 @@
 {
 	"name": "Activity",
-	"description": "Your top artists of every month, with stream counts.",
+	"description": "Shows your monthly listening statistics.",
 	"homepage": "https://github.com/marekvonrogall/luna-plugins#activity",
 	"author": {
 		"name": "marekvonrogall",
