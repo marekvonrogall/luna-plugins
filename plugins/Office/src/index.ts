@@ -1,6 +1,7 @@
 import type { LunaUnload } from "@luna/core";
 
 import { watchCompact } from "./compact";
+import { setupHeader } from "./header";
 import { setupPlayer } from "./player";
 import { setupBar } from "./player/bar";
 import { setupPinnedCover } from "./player/cover";
@@ -18,4 +19,5 @@ setupPlayer(unloads);
 setupBar(unloads);
 setupPinnedCover(unloads);
 setupSidebar(unloads);
+setupHeader(unloads);
 setupPinnedSidebar(unloads);

@@ -2,12 +2,13 @@ import type { LunaUnloads } from "@luna/core";
 import { observe } from "@luna/lib";
 
 const LINK_ATTR = "data-activity-link";
-/** TIDAL's own top entries (Home, Explore, …) */
-const LINKS = "#sidebar-content > a[data-test]";
+/** TIDAL's own top entries (Music, Explore, …) */
+const LINKS = `#sidebar-content > a[data-test]:not([${LINK_ATTR}])`;
+/** Like TIDAL's entries, so styles written for those (Office's) apply to it too */
+const DATA_TEST = "sidebar-my-activity";
 const LABEL = "My Activity";
-const ICON =
-	'<path d="M4 20h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
-	'<path d="M6.5 16.5v-5M10.5 16.5V5M14.5 16.5v-8M18.5 16.5v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
+/** Three bars like the mobile app's: short, tallest, in between */
+const ICON = '<path d="M6 20v-7M12 20V4M18 20v-11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
 
 export interface SidebarLink {
 	setActive(active: boolean): void;
@@ -41,15 +42,18 @@ export const setupSidebarLink = (unloads: LunaUnloads, href: string, onOpen: () 
 	const build = (source: HTMLAnchorElement) => {
 		const node = source.cloneNode(true) as HTMLAnchorElement;
 		for (const attr of [...node.attributes]) if (attr.name.startsWith("data-") || attr.name.startsWith("aria-")) node.removeAttribute(attr.name);
-		for (const child of node.querySelectorAll("[data-test]")) child.removeAttribute("data-test");
+		for (const child of node.querySelectorAll("*"))
+			for (const attr of [...child.attributes]) if (attr.name.startsWith("data-")) child.removeAttribute(attr.name);
 		for (const name of activeClasses) node.classList.remove(name);
 		node.setAttribute(LINK_ATTR, "");
+		node.setAttribute("data-test", DATA_TEST);
 		node.setAttribute("href", href);
 		node.setAttribute("aria-label", LABEL);
 		node.title = LABEL;
 
 		const svg = node.querySelector(":scope > svg");
 		if (svg !== null) {
+			svg.removeAttribute("style");
 			svg.setAttribute("viewBox", "0 0 24 24");
 			svg.innerHTML = ICON;
 		}
