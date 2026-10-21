@@ -51,3 +51,29 @@
 .collector-menu-item:hover {
 	background: #2b2b30;
 }
+/* Picker: dash for "some of the songs", faded while checking */
+.luna-dialog-row[aria-checked="mixed"] .luna-dialog-toggle {
+	position: relative;
+	border-color: #fff;
+	background: #fff;
+}
+.luna-dialog-row[aria-checked="mixed"] .luna-dialog-toggle svg {
+	opacity: 0;
+}
+.luna-dialog-row[aria-checked="mixed"] .luna-dialog-toggle::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 10px;
+	height: 2px;
+	border-radius: 1px;
+	background: #000;
+	transform: translate(-50%, -50%);
+}
+.luna-dialog-row[data-collector-pending] {
+	cursor: progress;
+}
+.luna-dialog-row[data-collector-pending] .luna-dialog-toggle {
+	opacity: 0.3;
+}

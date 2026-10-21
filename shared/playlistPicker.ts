@@ -101,6 +101,16 @@ export const itemCount = (count: number) => `${count} ${count === 1 ? "item" : "
 export const playlistCover = (playlist: PickablePlaylist) => ContentBase.formatCoverUrl(playlist.squareImage ?? playlist.image, { res: "160" });
 export const emptyMessage = (text: string) => el("div", "luna-dialog-empty", text);
 
+/** Bare check mark, styled by the caller */
+export const checkIcon = () => icon(CHECK_ICON);
+
+/** Round tick for checklist rows, filled when aria-checked="true" */
+export const toggleMark = () => {
+	const toggle = el("div", "luna-dialog-toggle");
+	toggle.appendChild(icon(CHECK_ICON));
+	return toggle;
+};
+
 export const button = (text: string, primary = false) => el("button", primary ? "luna-dialog-btn luna-dialog-btn-primary" : "luna-dialog-btn", text);
 
 export interface Modal<T> {
@@ -249,9 +259,7 @@ export const checklist = (items: CheckItem[], checked: Set<string>, round: boole
 		const shown = visible();
 		if (shown.length === 0) rows.appendChild(emptyMessage(items.length === 0 ? "Nothing here." : "No matches."));
 		for (const item of shown) {
-			const toggle = el("div", "luna-dialog-toggle");
-			toggle.appendChild(icon(CHECK_ICON));
-			const node = row({ ...item, round, trailing: toggle });
+			const node = row({ ...item, round, trailing: toggleMark() });
 			node.setAttribute("role", "checkbox");
 			node.setAttribute("aria-checked", String(checked.has(item.id)));
 			node.addEventListener("click", () => {

@@ -1,4 +1,5 @@
 import { createPlaylist, getPlaylistTrackIds, mapLimited, PLAYLIST_LIMIT, PlaylistWriter, type PlaylistInfo } from "./api";
+import { playlistTrackIds } from "./membership";
 
 const NUMBERED = /^(.*)-(\d+)$/;
 
@@ -66,7 +67,7 @@ export class PlaylistChain {
 			const match = NUMBERED.exec(p.title);
 			return match !== null && match[1] === this.base && Number(match[2]) >= 2;
 		});
-		const idSets = await mapLimited(others, 2, (p) => getPlaylistTrackIds(p.uuid));
+		const idSets = await mapLimited(others, 2, (p) => playlistTrackIds(p));
 		for (const ids of idSets) for (const id of ids) this.skip.add(id);
 	}
 

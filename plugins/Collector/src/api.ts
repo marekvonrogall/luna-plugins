@@ -7,6 +7,8 @@ export interface PlaylistInfo {
 	title: string;
 	numberOfTracks: number;
 	lastUpdated?: string;
+	/** Changes on every edit, validates cached contents */
+	stamp?: string;
 	squareImage?: string;
 	image?: string;
 }
@@ -53,6 +55,8 @@ const request = async (url: string, init: RequestInit = {}, retries = 3): Promis
 	for (let attempt = 0; ; attempt++) {
 		const res = await fetch(url, {
 			...init,
+			// The browser cache would return pre-edit contents
+			cache: "no-store",
 			headers: { ...(await TidalApi.getAuthHeaders()), ...(init.headers as Record<string, string> | undefined) },
 		});
 		if (res.ok) return res;
@@ -105,29 +109,35 @@ const getUserId = () => {
 	return userId;
 };
 
+const toPlaylistInfo = (p: redux.Playlist): PlaylistInfo => ({
+	uuid: p.uuid,
+	title: p.title,
+	numberOfTracks: p.numberOfTracks,
+	lastUpdated: p.lastItemAddedAt ?? p.lastUpdated,
+	stamp: p.lastUpdated ? `${p.lastUpdated}|${p.numberOfTracks ?? 0}|${p.numberOfVideos ?? 0}` : undefined,
+	squareImage: p.squareImage,
+	image: p.image,
+});
+
 /** All playlists created by the current user */
 export const getUserPlaylists = async (): Promise<PlaylistInfo[]> => {
 	const playlists = await fetchAllPages<redux.Playlist>(`users/${getUserId()}/playlists`, 50);
-	return playlists
-		.map((p) => ({
-			uuid: p.uuid,
-			title: p.title,
-			numberOfTracks: p.numberOfTracks,
-			lastUpdated: p.lastItemAddedAt ?? p.lastUpdated,
-			squareImage: p.squareImage,
-			image: p.image,
-		}))
-		.sort((a, b) => (b.lastUpdated ?? "").localeCompare(a.lastUpdated ?? ""));
+	return playlists.map(toPlaylistInfo).sort((a, b) => (b.lastUpdated ?? "").localeCompare(a.lastUpdated ?? ""));
 };
+
+export const getPlaylist = async (uuid: string) => toPlaylistInfo(await getJson<redux.Playlist>(withQuery(`playlists/${uuid}`)));
 
 /** All items in a playlist */
 export const getPlaylistItems = (playlistUUID: string) => fetchAllPages<redux.MediaItem>(`playlists/${playlistUUID}/items`, 100);
 
 /** All favorited (hearted) tracks of the current user */
-export const getFavoriteTracks = async (): Promise<SourceTrack[]> => {
-	const favorites = await fetchAllPages<{ item: redux.Track }>(`users/${getUserId()}/favorites/tracks`, 1000);
-	return favorites.map(({ item }) => toSourceTrack(item));
-};
+const favoriteTracks = () => fetchAllPages<{ item: redux.Track }>(`users/${getUserId()}/favorites/tracks`, 1000);
+
+export const getFavoriteTracks = async (): Promise<SourceTrack[]> => (await favoriteTracks()).map(({ item }) => toSourceTrack(item));
+
+/** Main artists of all favorited tracks */
+export const getFavoriteTrackArtists = async (): Promise<ArtistInfo[]> =>
+	withPictures(uniqueArtists((await favoriteTracks()).flatMap(({ item }) => mainArtists(item))));
 
 /** Runs `fn` over `items` with limited concurrency, results keep the input order */
 export const mapLimited = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
@@ -144,8 +154,14 @@ export const mapLimited = async <T, R>(items: T[], limit: number, fn: (item: T) 
 };
 
 /** Albums saved in My Collection */
+const favoriteAlbums = () => fetchAllPages<{ item: redux.Album }>(`users/${getUserId()}/favorites/albums`, 1000);
+
+/** Main artists of all saved albums */
+export const getFavoriteAlbumArtists = async (): Promise<ArtistInfo[]> =>
+	withPictures(uniqueArtists((await favoriteAlbums()).flatMap(({ item }) => mainArtists(item))));
+
 export const getFavoriteAlbums = async (): Promise<SourceTrack[]> => {
-	const favorites = await fetchAllPages<{ item: redux.Album }>(`users/${getUserId()}/favorites/albums`, 1000);
+	const favorites = await favoriteAlbums();
 	return favorites.map(({ item }) => ({
 		albumId: String(item.id),
 		albumTitle: item.title,
@@ -164,7 +180,7 @@ export interface ArtistInfo {
 export const getFavoriteArtists = async (): Promise<ArtistInfo[]> => {
 	const favorites = await fetchAllPages<{ item: redux.Artist }>(`users/${getUserId()}/favorites/artists`, 1000);
 	return favorites
-		.map(({ item }) => ({ id: String(item.id), name: item.name, picture: item.picture ?? undefined }))
+		.map(({ item }) => ({ id: String(item.id), name: item.name, picture: item.picture ?? item.selectedAlbumCoverFallback ?? undefined }))
 		.sort((a, b) => a.name.localeCompare(b.name));
 };
 
@@ -191,6 +207,11 @@ export const getArtistReleases = async (artistId: string): Promise<SourceTrack[]
 	}));
 };
 
+export const getAlbumTrackIds = async (albumId: string): Promise<string[]> => {
+	const items = await fetchAllPages<redux.MediaItem>(`albums/${albumId}/items`, 100);
+	return items.filter((i) => i.type === "track").map((i) => String(i.item.id));
+};
+
 /** Track ids of an album in album order, videos and AI-generated songs left out */
 export const getAlbumTracks = async (albumId: string): Promise<{ trackIds: string[]; aiCount: number }> => {
 	const items = await fetchAllPages<redux.MediaItem>(`albums/${albumId}/items`, 100);
@@ -199,15 +220,43 @@ export const getAlbumTracks = async (albumId: string): Promise<{ trackIds: strin
 	return { trackIds: human.map((i) => String(i.item.id)), aiCount: tracks.length - human.length };
 };
 
-/** Track info incl. album, from the redux store or the API */
-export const getTrackSource = async (trackId: string): Promise<SourceTrack> => {
+/** From the store if complete, else the API */
+export const getTrack = async (trackId: string): Promise<redux.Track | undefined> => {
 	const stored = redux.store.getState().content.mediaItems[trackId];
-	if (stored?.type === "track" && stored.item.album?.id !== undefined && stored.item.album?.id !== null) {
-		return toSourceTrack(stored.item as redux.Track);
+	if (stored?.type === "track" && stored.item.album?.id !== undefined && stored.item.album?.id !== null && Array.isArray(stored.item.artists)) {
+		return stored.item as redux.Track;
 	}
-	const track = await getJson<redux.Track>(withQuery(`tracks/${trackId}`)).catch(() => undefined);
+	return getJson<redux.Track>(withQuery(`tracks/${trackId}`)).catch(() => undefined);
+};
+
+export const getTrackSource = async (trackId: string): Promise<SourceTrack> => {
+	const track = await getTrack(trackId);
 	return track === undefined ? { trackId } : toSourceTrack(track);
 };
+
+/** Featured artists left out */
+export const mainArtists = (item: { artist?: redux.ArtistInline; artists?: redux.ArtistInline[] }): ArtistInfo[] => {
+	const all = item.artists ?? [];
+	const main = all.filter((a) => a.type === "MAIN");
+	const chosen = main.length > 0 ? main : all.length > 0 ? all.slice(0, 1) : item.artist ? [item.artist] : [];
+	return chosen.map((a) => ({ id: String(a.id), name: a.name, picture: a.picture ?? undefined }));
+};
+
+export const uniqueArtists = (artists: ArtistInfo[]) => {
+	const byId = new Map<string, ArtistInfo>();
+	for (const artist of artists) if (!byId.has(artist.id) || (!byId.get(artist.id)!.picture && artist.picture)) byId.set(artist.id, artist);
+	return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/** Artists without a picture get TIDAL's album cover fallback, like in My Collection */
+export const withPictures = (artists: ArtistInfo[]) =>
+	mapLimited(artists, 4, async (artist) => {
+		if (artist.picture) return artist;
+		const stored = redux.store.getState().content.artists[artist.id];
+		const full =
+			stored?.picture || stored?.selectedAlbumCoverFallback ? stored : await getJson<redux.Artist>(withQuery(`artists/${artist.id}`)).catch(() => undefined);
+		return { ...artist, picture: full?.picture ?? full?.selectedAlbumCoverFallback ?? undefined };
+	});
 
 const CHUNK_SIZE = 50;
 /** Max songs per playlist, TIDAL answers 400 beyond that */
@@ -279,6 +328,41 @@ export class PlaylistWriter {
 	}
 }
 
+const getEtag = async (uuid: string) => {
+	const res = await request(withQuery(`playlists/${uuid}`));
+	if (!res.ok) throw new Error(`Failed to load playlist (${res.status} ${res.statusText})`);
+	const etag = res.headers.get("etag");
+	if (etag === null) throw new Error("Playlist has no ETag (is it your own playlist?)");
+	return etag;
+};
+
+const REMOVE_CHUNK = 100;
+
+/** Removes every copy of the tracks; returns the count and the ids left */
+export const removeTracksFromPlaylist = async (uuid: string, trackIds: Set<string>): Promise<{ removed: number; remaining: Set<string> }> => {
+	const items = await getPlaylistItems(uuid);
+	const indices: number[] = [];
+	const remaining = new Set<string>();
+	items.forEach((item, index) => {
+		const id = String(item.item.id);
+		if (trackIds.has(id)) indices.push(index);
+		else remaining.add(id);
+	});
+	// Highest first, so lower positions stay valid
+	indices.sort((a, b) => b - a);
+	for (let i = 0; i < indices.length; i += REMOVE_CHUNK) {
+		const chunk = indices.slice(i, i + REMOVE_CHUNK);
+		let res: Response | undefined;
+		// ETag changes after every write, retry once if stale (412)
+		for (let attempt = 0; attempt < 2; attempt++) {
+			res = await request(withQuery(`playlists/${uuid}/items/${chunk.join(",")}`), { method: "DELETE", headers: { "If-None-Match": await getEtag(uuid) } });
+			if (res.status !== 412) break;
+		}
+		if (!res?.ok) throw new Error(`Failed to remove songs (${res?.status} ${res?.statusText})`);
+	}
+	return { removed: indices.length, remaining };
+};
+
 /** Creates an empty playlist in the root folder */
 export const createPlaylist = async (title: string): Promise<PlaylistInfo> => {
 	const params = new URLSearchParams({ name: title, description: "", folderId: "root" });
@@ -308,9 +392,38 @@ export const refreshPlaylistLists = () => {
 
 /** Reloads the playlist in the Tidal UI */
 export const refreshPlaylistView = (playlistUUID: string) => {
-	try {
-		redux.actions["content/LOAD_LIST_ITEMS_PAGE"]({ listName: `playlists/${playlistUUID}`, listType: "mediaItems", reset: true });
-	} catch {
-		/* purely cosmetic */
-	}
+	const reload = () => {
+		try {
+			// Playlist info first, or TIDAL may think the list is unchanged
+			redux.actions["content/LOAD_PLAYLIST"]({ playlistUUID });
+			const content = redux.store.getState().content as unknown as Record<string, unknown>;
+			const names = new Set([`playlists/${playlistUUID}`]);
+			const lists: Record<string, redux.List | undefined> = {};
+			for (const [key, value] of Object.entries(content)) {
+				if (!key.endsWith("Lists") || typeof value !== "object" || value === null) continue;
+				for (const [name, list] of Object.entries(value as Record<string, redux.List>)) {
+					if (!name.includes(playlistUUID)) continue;
+					names.add(name);
+					lists[name] = list;
+				}
+			}
+			for (const listName of names) {
+				type Page = redux.ActionPayloads["content/LOAD_LIST_ITEMS_PAGE"];
+				const list = lists[listName];
+				redux.actions["content/LOAD_LIST_ITEMS_PAGE"]({
+					listName,
+					listType: "mediaItems",
+					reset: true,
+					// The sort the page shows
+					order: (list?.currentOrder ?? undefined) as Page["order"],
+					orderDirection: (list?.currentDirection ?? undefined) as Page["orderDirection"],
+				});
+			}
+		} catch {
+			/* purely cosmetic */
+		}
+	};
+	reload();
+	// TIDAL's servers can lag behind an edit
+	setTimeout(reload, 2000);
 };
