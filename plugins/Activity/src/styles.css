@@ -25,11 +25,9 @@
 	position: relative;
 	display: flex;
 	align-items: flex-end;
+	min-height: 300px;
 	padding: 40px clamp(16px, 3vw, 40px) 24px;
 	overflow: hidden;
-}
-.luna-activity-hero.has-art {
-	min-height: 300px;
 }
 .luna-activity-hero-art {
 	position: absolute;
@@ -39,6 +37,15 @@
 	opacity: 0;
 	transform: scale(1.03);
 	transition: opacity 0.5s ease, transform 0.8s ease;
+}
+.luna-activity-hero-placeholder {
+	background-image: var(--la-placeholder);
+	opacity: 1;
+	transform: none;
+	transition: none;
+}
+.luna-activity-hero-art.is-instant {
+	transition: none;
 }
 .luna-activity-hero-art.is-loaded {
 	opacity: 1;
@@ -92,10 +99,29 @@
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
-.luna-activity-stat-muted {
-	background: rgba(255, 255, 255, 0.06);
+/* Days left: plain text next to the pills */
+.luna-activity-days {
+	align-self: center;
+	padding: 0 4px;
 	color: var(--la-muted);
+	font-size: 13px;
 	font-weight: 500;
+}
+.luna-activity-days.luna-activity-skeleton {
+	border-radius: 4px;
+}
+
+/* Stand-ins while a month loads */
+.luna-activity-skeleton {
+	color: transparent !important;
+	background: var(--la-faint) !important;
+	backdrop-filter: none;
+	animation: luna-activity-pulse 1.2s ease-in-out infinite;
+	user-select: none;
+}
+.luna-activity-subtitle.luna-activity-skeleton {
+	width: min(420px, 70%);
+	border-radius: 6px;
 }
 
 /* Month tabs, pinned while scrolling */

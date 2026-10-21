@@ -2,6 +2,8 @@ import { artistImage, getTimeline, getTopArtists, HttpError, isRunningMonth, loo
 import { navigate } from "./navigate";
 import { trace } from "./trace";
 
+import placeholderImage from "file://resources/placeholder_landscape.jpg?base64";
+
 const P = "luna-activity";
 
 export interface View {
@@ -49,11 +51,20 @@ const backgroundOf = (node: HTMLElement | null) => {
 	return "#101012";
 };
 
+/** Shown until a month's own image has loaded, so the header keeps its size */
+const PLACEHOLDER = `url("data:image/jpeg;base64,${placeholderImage}")`;
+/** Whether a month ("2026-10") came with a subtitle, so its stand-in matches */
+const hasSubtitle = new Map<string, boolean>();
+const monthKey = (month: Timeline) => `${month.year}-${month.month}`;
+/** Images already shown once appear without fading in again */
+const loadedImages = new Set<string>();
+
 const findMain = () => document.querySelector<HTMLElement>('[data-test="main"]') ?? document.querySelector<HTMLElement>("main");
 
 /** `onLeave` runs when the view opens a TIDAL page itself (an artist) */
 export const createView = (onLeave: () => void): View => {
 	const root = h("section", P);
+	root.style.setProperty("--la-placeholder", PLACEHOLDER);
 	root.setAttribute("aria-label", "My Activity");
 	const scroller = h("div", `${P}-scroll`);
 	root.append(scroller);
@@ -92,9 +103,6 @@ export const createView = (onLeave: () => void): View => {
 		load();
 	};
 
-	/** Kept across re-renders, so switching months doesn't jump the row back */
-	let tabScroll = 0;
-
 	const arrow = (direction: -1 | 1) => {
 		const button = h("button", `${P}-tab-arrow`);
 		button.type = "button";
@@ -103,82 +111,97 @@ export const createView = (onLeave: () => void): View => {
 		return button;
 	};
 
-	const renderTabs = () => {
-		const bar = h("div", `${P}-tabbar`);
-		const tabs = h("nav", `${P}-tabs`);
-		tabs.setAttribute("role", "tablist");
-		const prev = arrow(-1);
-		const next = arrow(1);
-		const current = shownMonth();
-		let selectedTab: HTMLElement | undefined;
-		for (const month of timeline) {
-			const tab = h("button", `${P}-tab`, monthLabel(month));
-			tab.type = "button";
-			tab.setAttribute("role", "tab");
-			const isSelected = sameMonth(month, current);
-			if (isSelected) selectedTab = tab;
-			tab.setAttribute("aria-selected", String(isSelected));
-			tab.addEventListener("click", () => !isSelected && selectMonth(isRunningMonth(month) ? undefined : month));
-			tabs.append(tab);
-		}
+	const bar = h("div", `${P}-tabbar`);
+	const tabs = h("nav", `${P}-tabs`);
+	tabs.setAttribute("role", "tablist");
+	const prev = arrow(-1);
+	const next = arrow(1);
+	bar.append(prev, tabs, next);
+	/** The months the buttons were made for */
+	let tabsFor = "";
+	const tabOf = new Map<string, HTMLButtonElement>();
 
-		const update = () => {
-			tabScroll = tabs.scrollLeft;
+	const updateArrows = () => {
+		const max = tabs.scrollWidth - tabs.clientWidth;
+		const atStart = tabs.scrollLeft <= 1;
+		const atEnd = tabs.scrollLeft >= max - 1;
+		prev.disabled = atStart;
+		next.disabled = atEnd;
+		bar.classList.toggle("is-overflowing", max > 1);
+		bar.classList.toggle("at-start", atStart);
+		bar.classList.toggle("at-end", atEnd);
+	};
+	const page = (direction: -1 | 1) => tabs.scrollBy({ left: direction * tabs.clientWidth * 0.7, behavior: "smooth" });
+	prev.addEventListener("click", () => page(-1));
+	next.addEventListener("click", () => page(1));
+	tabs.addEventListener("scroll", updateArrows, { passive: true });
+	tabs.addEventListener(
+		"wheel",
+		(e) => {
+			if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
 			const max = tabs.scrollWidth - tabs.clientWidth;
-			const atStart = tabs.scrollLeft <= 1;
-			const atEnd = tabs.scrollLeft >= max - 1;
-			prev.disabled = atStart;
-			next.disabled = atEnd;
-			bar.classList.toggle("is-overflowing", max > 1);
-			bar.classList.toggle("at-start", atStart);
-			bar.classList.toggle("at-end", atEnd);
-		};
-		const page = (direction: -1 | 1) => tabs.scrollBy({ left: direction * tabs.clientWidth * 0.7, behavior: "smooth" });
-		prev.addEventListener("click", () => page(-1));
-		next.addEventListener("click", () => page(1));
-		tabs.addEventListener("scroll", update, { passive: true });
-		// A normal mouse wheel scrolls the months sideways, until the row runs out
-		tabs.addEventListener(
-			"wheel",
-			(e) => {
-				if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-				const max = tabs.scrollWidth - tabs.clientWidth;
-				if ((e.deltaY < 0 && tabs.scrollLeft <= 0) || (e.deltaY > 0 && tabs.scrollLeft >= max)) return;
-				e.preventDefault();
-				tabs.scrollLeft += e.deltaY;
-			},
-			{ passive: false },
-		);
-		new ResizeObserver(update).observe(tabs);
+			if ((e.deltaY < 0 && tabs.scrollLeft <= 0) || (e.deltaY > 0 && tabs.scrollLeft >= max)) return;
+			e.preventDefault();
+			tabs.scrollLeft += e.deltaY;
+		},
+		{ passive: false },
+	);
+	new ResizeObserver(updateArrows).observe(tabs);
 
-		bar.append(prev, tabs, next);
-		requestAnimationFrame(() => {
-			tabs.scrollLeft = tabScroll;
-			// The chosen month stays in view
-			if (selectedTab !== undefined) {
-				const left = selectedTab.offsetLeft - tabs.offsetLeft;
-				if (left < tabs.scrollLeft || left + selectedTab.offsetWidth > tabs.scrollLeft + tabs.clientWidth)
-					tabs.scrollLeft = left - (tabs.clientWidth - selectedTab.offsetWidth) / 2;
-			}
-			update();
-		});
-		return bar;
+	/** Buttons only when the months change; otherwise just which one is selected */
+	const syncTabs = () => {
+		bar.style.display = timeline.length > 1 ? "" : "none";
+		const key = timeline.map(monthKey).join();
+		if (key !== tabsFor) {
+			tabsFor = key;
+			tabOf.clear();
+			tabs.replaceChildren(
+				...timeline.map((month) => {
+					const tab = h("button", `${P}-tab`, monthLabel(month));
+					tab.type = "button";
+					tab.setAttribute("role", "tab");
+					tab.addEventListener("click", () => {
+						if (!sameMonth(month, shownMonth())) selectMonth(isRunningMonth(month) ? undefined : month);
+					});
+					tabOf.set(monthKey(month), tab);
+					return tab;
+				}),
+			);
+			requestAnimationFrame(updateArrows);
+		}
+		const current = shownMonth();
+		for (const [month, tab] of tabOf) tab.setAttribute("aria-selected", String(current !== undefined && month === monthKey(current)));
+	};
+
+	const heroSlot = h("div");
+	const bodySlot = h("div");
+	scroller.append(heroSlot, bar, bodySlot);
+	const showPage = (hero: HTMLElement, body: HTMLElement) => {
+		heroSlot.replaceChildren(hero);
+		syncTabs();
+		bodySlot.replaceChildren(body);
 	};
 
 	const renderHero = (data?: TopArtists) => {
 		const hero = h("header", `${P}-hero`);
+		const placeholder = h("div", `${P}-hero-art ${P}-hero-placeholder`);
 		const art = h("div", `${P}-hero-art`);
 		const activity = data?.activity;
 		const images = activity?.images ?? [];
 		const image = images.find((img) => img.id === "LANDSCAPE" || img.orientation === "LANDSCAPE") ?? images.find((img) => img.id === "DEFAULT") ?? images[0];
 		const url = image?.url ?? artistImage(data?.artists?.[0]?.artist, true);
 		if (url) {
-			hero.classList.add("has-art");
-			const img = new Image();
-			img.decoding = "async";
-			img.onload = () => art.classList.add("is-loaded");
-			img.src = url;
 			art.style.backgroundImage = `url("${url.replace(/"/g, "%22")}")`;
+			if (loadedImages.has(url)) art.classList.add("is-loaded", "is-instant");
+			else {
+				const img = new Image();
+				img.decoding = "async";
+				img.onload = () => {
+					loadedImages.add(url);
+					art.classList.add("is-loaded");
+				};
+				img.src = url;
+			}
 		}
 		const text = h("div", `${P}-hero-text`);
 		const month = shownMonth();
@@ -187,16 +210,23 @@ export const createView = (onLeave: () => void): View => {
 			h("h1", `${P}-title`, activity?.title || "Your top artists"),
 		);
 		if (activity?.subtitle) text.append(h("p", `${P}-subtitle`, activity.subtitle));
+		if (data !== undefined && month !== undefined) hasSubtitle.set(monthKey(month), !!activity?.subtitle);
 		if (data !== undefined) {
 			const stats = h("div", `${P}-stats`);
 			const artists = data.artists?.length ?? 0;
 			const streams = data.totalNrOfStreams ?? (data.artists ?? []).reduce((sum, artist) => sum + (artist.nrOfStreams ?? 0), 0);
 			stats.append(h("span", `${P}-stat`, plural(streams, "stream", "streams")), h("span", `${P}-stat`, plural(artists, "artist", "artists")));
 			const daysLeft = activity?.nrOfDaysLeft ?? 0;
-			if (month !== undefined && isRunningMonth(month) && daysLeft > 0) stats.append(h("span", `${P}-stat ${P}-stat-muted`, `${plural(daysLeft, "day", "days")} left this month`));
+			if (month !== undefined && isRunningMonth(month) && daysLeft > 0) stats.append(h("span", `${P}-days`, `${plural(daysLeft, "day", "days")} left this month`));
+			text.append(stats);
+		} else {
+			if (month !== undefined && (hasSubtitle.get(monthKey(month)) ?? isRunningMonth(month))) text.append(h("p", `${P}-subtitle ${P}-skeleton`, "\u00a0"));
+			const stats = h("div", `${P}-stats`);
+			stats.append(...["0,000 streams", "00 artists"].map((label) => h("span", `${P}-stat ${P}-skeleton`, label)));
+			if (month !== undefined && isRunningMonth(month)) stats.append(h("span", `${P}-days ${P}-skeleton`, "00 days left this month"));
 			text.append(stats);
 		}
-		hero.append(art, text);
+		hero.append(placeholder, art, text);
 		return hero;
 	};
 
@@ -291,7 +321,7 @@ export const createView = (onLeave: () => void): View => {
 			aside.append(...notes);
 			body.append(aside);
 		}
-		scroller.replaceChildren(renderHero(data), ...(timeline.length > 1 ? [renderTabs()] : []), body);
+		showPage(renderHero(data), body);
 	};
 
 	const renderLoading = () => {
@@ -303,7 +333,7 @@ export const createView = (onLeave: () => void): View => {
 			list.append(row);
 		}
 		body.append(list);
-		scroller.replaceChildren(renderHero(), ...(timeline.length > 1 ? [renderTabs()] : []), body);
+		showPage(renderHero(), body);
 	};
 
 	const renderError = (err: unknown) => {
@@ -317,7 +347,7 @@ export const createView = (onLeave: () => void): View => {
 		retry.type = "button";
 		retry.addEventListener("click", () => load(true));
 		body.append(retry);
-		scroller.replaceChildren(renderHero(), ...(timeline.length > 1 ? [renderTabs()] : []), body);
+		showPage(renderHero(), body);
 	};
 
 	const load = (force = false) => {
