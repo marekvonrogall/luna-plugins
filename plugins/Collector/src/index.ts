@@ -13,6 +13,7 @@ import { PICKER_CSS, pickArtists, pickCollectTargets, pickPlaylists, type Playli
 import { MULTI_SELECT_MENU, onMultiSelectMenu } from "../../../shared/multiSelectMenu";
 import { addPlaylistPickerStyles } from "../../../shared/playlistPicker";
 import { addProgressToastStyles } from "../../../shared/progressToast";
+import { keepPlaylistsFresh, onPlaylistWrite } from "../../../shared/playlistSync";
 
 import styles from "file://styles.css?minify";
 
@@ -25,10 +26,9 @@ new StyleTag("Collector-picker", unloads, PICKER_CSS);
 addProgressToastStyles("Collector", unloads);
 addPlaylistPickerStyles("Collector", unloads);
 setupMenuRestore(unloads);
+keepPlaylistsFresh(unloads);
 
 const MENU_LABEL = "Playlist Tools";
-/** Latest playlists also checked for several songs */
-const RECENT_COUNT = 10;
 /** Luna buttons for the "..." menus, reused across menus */
 const menuButtons: ReturnType<typeof ContextMenu.addButton>[] = [];
 
@@ -45,13 +45,11 @@ const recentUserPlaylists = () => {
 	}
 	return playlistList.promise;
 };
-const playlistChanged = (uuid: unknown) => {
+// Any edit, ours or TIDAL's
+onPlaylistWrite(unloads, (uuid) => {
 	playlistList = undefined;
-	if (uuid !== undefined && uuid !== null) forgetPlaylist(String(uuid));
-};
-// Changes made with TIDAL's own menus
-redux.intercept("content/ADD_MEDIA_ITEMS_TO_PLAYLIST_SUCCESS", unloads, (payload) => playlistChanged(payload?.playlistUUID));
-redux.intercept("content/REMOVE_MEDIA_ITEMS_FROM_PLAYLIST_SUCCESS", unloads, (payload) => playlistChanged(payload?.playlistUUID));
+	forgetPlaylist(uuid);
+});
 
 const closeContextMenu = () => {
 	// TIDAL's multi-select menu ignores contextMenu/CLOSE
@@ -115,9 +113,9 @@ const removeFromOne = async (selection: Selection, uuid: string, title: string) 
 	await applyChanges(selection, { add: [], remove: [known.find((p) => p.uuid === uuid) ?? { uuid, title, numberOfTracks: 0 }] });
 };
 
-/** Playlists with (some of) the songs: all with `all`, else only `include`d ones. Cached, quick after the first time */
-const findPlaylistsWith = (selection: Selection, all: boolean) => {
-	const state = { found: [] as PlaylistInfo[], counts: new Map<string, number | undefined>(), total: 0, done: !all, failed: false };
+/** Playlists with (some of) the songs, checking all of them. Cached, quick after the first time */
+const findPlaylistsWith = (selection: Selection) => {
+	const state = { found: [] as PlaylistInfo[], counts: new Map<string, number | undefined>(), total: 0, done: false, failed: false };
 	const listeners = new Set<() => void>();
 	const requested = new Set<string>();
 	let scanning = 0;
@@ -163,14 +161,13 @@ const findPlaylistsWith = (selection: Selection, all: boolean) => {
 			trace.warn("Couldn't check which playlists have the songs", err);
 			notify();
 		});
-	if (all) void run();
+	void run();
 	return {
 		state,
 		onChange: (listener: () => void) => listeners.add(listener),
 		stop: () => (stopped = true),
+		/** Checks these first */
 		include: (uuids: string[]) => void run(uuids),
-		/** Also the user's latest playlists */
-		includeLatest: (count: number) => void base.then(({ playlists }) => run(playlists.slice(0, count).map((p) => p.uuid))),
 	};
 };
 type Search = ReturnType<typeof findPlaylistsWith>;
@@ -277,9 +274,7 @@ const setUpPlaylistTools = async (contextMenu: Element, collection: MediaCollect
 		closeContextMenu();
 		action();
 	};
-	// One song: every playlist; several: the recent ones
-	const search: Search = findPlaylistsWith(selection, selection.single);
-	if (!selection.single) search.includeLatest(RECENT_COUNT);
+	const search: Search = findPlaylistsWith(selection);
 	let tools: PlaylistTools | undefined;
 	let removeEntry: EntryHandle | undefined;
 	let removeMenu: SubmenuBuilder | undefined;
@@ -291,7 +286,7 @@ const setUpPlaylistTools = async (contextMenu: Element, collection: MediaCollect
 		menu.clear();
 		menu.item("Show all playlists", run(() => editPlaylists(selection, "remove")));
 		const { found, done, counts, total } = search.state;
-		if (found.length > 0) menu.heading(selection.single ? "In playlists" : "Recent");
+		if (found.length > 0) menu.heading("In playlists");
 		for (const { uuid, title } of found) setTick(menu.item(title, run(() => removeFromOne(selection, uuid, title))), tickState(counts.get(uuid), total));
 		if (!done) menu.heading("Checking playlists…");
 		menu.reposition();
@@ -321,9 +316,9 @@ const setUpPlaylistTools = async (contextMenu: Element, collection: MediaCollect
 	const update = () => {
 		retick();
 		fillRemoveMenu();
-		// Nothing to remove a single song from
+		// Nothing to remove the songs from
 		const { done, failed } = found.state;
-		if (selection.single) removeEntry?.setDisabled(done && !failed && found.state.found.length === 0);
+		removeEntry?.setDisabled(done && !failed && found.state.found.length === 0);
 	};
 	found.onChange(update);
 	update();

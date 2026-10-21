@@ -1,5 +1,8 @@
 import { redux, TidalApi } from "@luna/lib";
 
+import { removeFromPlaylistV2 } from "../../../shared/playlistRemove";
+import { trace } from "./trace";
+
 const API = "https://api.tidal.com/v1";
 
 export interface PlaylistInfo {
@@ -340,6 +343,9 @@ const REMOVE_CHUNK = 100;
 
 /** Removes every copy of the tracks; returns the count and the ids left */
 export const removeTracksFromPlaylist = async (uuid: string, trackIds: Set<string>): Promise<{ removed: number; remaining: Set<string> }> => {
+	const viaV2 = await removeFromPlaylistV2(uuid, trackIds);
+	if (viaV2 !== undefined) return viaV2;
+	trace.warn("v2 removal failed, falling back to v1 (track count may be off)");
 	const items = await getPlaylistItems(uuid);
 	const indices: number[] = [];
 	const remaining = new Set<string>();
@@ -378,52 +384,4 @@ export const createPlaylist = async (title: string): Promise<PlaylistInfo> => {
 export const getPlaylistTrackIds = async (playlistUUID: string): Promise<Set<string>> => {
 	const items = await getPlaylistItems(playlistUUID);
 	return new Set(items.map((i) => String(i.item.id)));
-};
-
-/** Makes new playlists show up in TIDAL's sidebar and collection */
-export const refreshPlaylistLists = () => {
-	try {
-		redux.actions["content/LOAD_CREATED_PLAYLISTS"]({ reset: true, getAll: true });
-		redux.actions["folders/LOAD_FOLDER_ITEMS"]({ context: "sidebar", reset: true, loadAll: true } as never);
-	} catch {
-		/* purely cosmetic */
-	}
-};
-
-/** Reloads the playlist in the Tidal UI */
-export const refreshPlaylistView = (playlistUUID: string) => {
-	const reload = () => {
-		try {
-			// Playlist info first, or TIDAL may think the list is unchanged
-			redux.actions["content/LOAD_PLAYLIST"]({ playlistUUID });
-			const content = redux.store.getState().content as unknown as Record<string, unknown>;
-			const names = new Set([`playlists/${playlistUUID}`]);
-			const lists: Record<string, redux.List | undefined> = {};
-			for (const [key, value] of Object.entries(content)) {
-				if (!key.endsWith("Lists") || typeof value !== "object" || value === null) continue;
-				for (const [name, list] of Object.entries(value as Record<string, redux.List>)) {
-					if (!name.includes(playlistUUID)) continue;
-					names.add(name);
-					lists[name] = list;
-				}
-			}
-			for (const listName of names) {
-				type Page = redux.ActionPayloads["content/LOAD_LIST_ITEMS_PAGE"];
-				const list = lists[listName];
-				redux.actions["content/LOAD_LIST_ITEMS_PAGE"]({
-					listName,
-					listType: "mediaItems",
-					reset: true,
-					// The sort the page shows
-					order: (list?.currentOrder ?? undefined) as Page["order"],
-					orderDirection: (list?.currentDirection ?? undefined) as Page["orderDirection"],
-				});
-			}
-		} catch {
-			/* purely cosmetic */
-		}
-	};
-	reload();
-	// TIDAL's servers can lag behind an edit
-	setTimeout(reload, 2000);
 };

@@ -1,4 +1,5 @@
-import { getPlaylist, PlaylistWriter, refreshPlaylistView, removeTracksFromPlaylist, type PlaylistInfo } from "./api";
+import { syncPlaylist } from "../../../shared/playlistSync";
+import { getPlaylist, PlaylistWriter, removeTracksFromPlaylist, type PlaylistInfo } from "./api";
 import { describeError, plural, quoted } from "./collect";
 import { addToPlaylistContents, forgetPlaylist, setPlaylistContents } from "./membership";
 import { trace } from "./trace";
@@ -38,7 +39,7 @@ export const addToPlaylists = async (targets: PlaylistInfo[], trackIds: string[]
 			forgetPlaylist(target.uuid);
 			failed.push(`“${target.title}”: ${describeError(err)}`);
 		} finally {
-			refreshPlaylistView(target.uuid);
+			syncPlaylist(target.uuid);
 		}
 	}
 
@@ -68,11 +69,11 @@ export const removeFromPlaylists = async (targets: PlaylistInfo[], trackIds: str
 				// Contents known exactly, no re-read needed
 				const updated = await getPlaylist(target.uuid).catch(() => undefined);
 				setPlaylistContents(target.uuid, updated?.stamp, remaining);
-				refreshPlaylistView(target.uuid);
+				syncPlaylist(target.uuid);
 			}
 		} catch (err) {
 			forgetPlaylist(target.uuid);
-			refreshPlaylistView(target.uuid);
+			syncPlaylist(target.uuid);
 			failed.push(`“${target.title}”: ${describeError(err)}`);
 		}
 	}

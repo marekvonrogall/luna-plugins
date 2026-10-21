@@ -2,6 +2,7 @@ import { redux, TidalApi } from "@luna/lib";
 
 import type { PickablePlaylist } from "../../../shared/playlistPicker";
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
+import { removeFromPlaylistV2 } from "../../../shared/playlistRemove";
 
 const API = "https://api.tidal.com/v1";
 const withQuery = (path: string, extra = "") => `${API}/${path}${path.includes("?") ? "&" : "?"}${TidalApi.queryArgs()}${extra}`;
@@ -215,19 +216,11 @@ export const addTrack = async (uuid: string, trackId: string): Promise<string[] 
 /** Removes every occurrence of any of the ids (looked up fresh, positions change on edits) */
 export const removeTrack = async (uuid: string, trackIds: string[]) => {
 	const ids = new Set(trackIds);
+	if ((await removeFromPlaylistV2(uuid, ids)) !== undefined) return;
 	const items = await fetchPlaylistItems(uuid);
 	const indices = items.flatMap((item, index) => (ids.has(String(item.item.id)) ? [index] : []));
 	if (indices.length === 0) return;
 	await modify(uuid, "Failed to remove the song", (etag) =>
 		request(withQuery(`playlists/${uuid}/items/${indices.join(",")}`), { method: "DELETE", headers: { "If-None-Match": etag } }),
 	);
-};
-
-/** Ask the TIDAL UI to reload a playlist so changes show without a restart */
-export const refreshPlaylistView = (uuid: string) => {
-	try {
-		redux.actions["content/LOAD_LIST_ITEMS_PAGE"]({ listName: `playlists/${uuid}`, listType: "mediaItems", reset: true });
-	} catch {
-		/* purely cosmetic */
-	}
 };

@@ -1,7 +1,8 @@
 import { redux } from "@luna/lib";
 
 import { fetchPlaylistItems } from "../../../shared/playlistItems";
-import { addTrack, getPlaylistInfo, getUserPlaylists, refreshPlaylistView, removeTrack, waitForLogin } from "./api";
+import { syncPlaylist } from "../../../shared/playlistSync";
+import { addTrack, getPlaylistInfo, getUserPlaylists, removeTrack, waitForLogin } from "./api";
 import { pickPlaylist } from "../../../shared/playlistPicker";
 import { trace, unloads } from "./core";
 import { canonicalId, getRatingPlaylist, idsOfSong, linkTrackIds, RATINGS, setRatingPlaylist, stars, type RatingPlaylist } from "./store";
@@ -193,7 +194,7 @@ export const applyRating = async (trackId: string, rating: number) => {
 		}
 		if (!cache.has(rating)) cache.set(rating, new Set());
 		cache.get(rating)!.add(id);
-		refreshPlaylistView(target.uuid);
+		syncPlaylist(target.uuid);
 	}
 	const ids = idsOfSong(id);
 	for (const other of RATINGS) {
@@ -204,7 +205,7 @@ export const applyRating = async (trackId: string, rating: number) => {
 		if (playlist === undefined || playlist.uuid === target?.uuid) continue;
 		await removeTrack(playlist.uuid, ids);
 		for (const each of ids) cached!.delete(each);
-		refreshPlaylistView(playlist.uuid);
+		syncPlaylist(playlist.uuid);
 	}
 	notify();
 };

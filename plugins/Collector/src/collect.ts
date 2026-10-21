@@ -1,12 +1,13 @@
 import type { LunaUnloads } from "@luna/core";
 
-import { getAlbumTracks, getArtistReleases, HttpError, mapLimited, refreshPlaylistLists, refreshPlaylistView, type ArtistInfo, type SourceTrack } from "./api";
+import { getAlbumTracks, getArtistReleases, HttpError, mapLimited, type ArtistInfo, type SourceTrack } from "./api";
 import { OverflowError, PlaylistChain } from "./chain";
 import { trace } from "./trace";
 import { forgetPlaylist, playlistTrackIds } from "./membership";
 import type { LoadSources, OnProgress } from "./selection";
 import type { TargetChoice } from "./ui";
 import { ProgressToast } from "../../../shared/progressToast";
+import { syncPlaylist, syncPlaylistLists } from "../../../shared/playlistSync";
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export const quoted = (titles: string[]) => {
@@ -142,10 +143,10 @@ export const collectAlbums = async (unloads: LunaUnloads, { targets, exclusions,
 			await chain.finish().catch(trace.warn.withContext("Failed to read final playlist size"));
 			for (const uuid of chain.uuids) {
 				forgetPlaylist(uuid);
-				refreshPlaylistView(uuid);
+				syncPlaylist(uuid);
 			}
 		}
-		if (chains.some((chain) => chain.created.length > 0)) refreshPlaylistLists();
+		if (chains.some((chain) => chain.created.length > 0)) syncPlaylistLists();
 
 		const added = totalAdded();
 		const skipped = chains.reduce((sum, chain) => sum + chain.sent - chain.added + chain.dropped, 0) + excluded;

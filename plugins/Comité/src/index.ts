@@ -1,6 +1,7 @@
 import { MediaItem, observe, StyleTag } from "@luna/lib";
 
 import { addPlaylistPickerStyles } from "../../../shared/playlistPicker";
+import { keepPlaylistsFresh } from "../../../shared/playlistSync";
 import { trace, unloads } from "./core";
 import { RATE_MODE_CSS, startRatingMode } from "./rateMode";
 import { FAVORITES_RATE_CSS, setupRateButton } from "./rateButton";
@@ -31,6 +32,7 @@ new StyleTag(
 `,
 );
 addPlaylistPickerStyles("Comité", unloads);
+keepPlaylistsFresh(unloads);
 new StyleTag("Comité-rate-mode", unloads, RATE_MODE_CSS + FAVORITES_RATE_CSS + RATING_COLUMN_CSS + COVER_BADGE_CSS);
 
 let currentTrackId: string | undefined;
