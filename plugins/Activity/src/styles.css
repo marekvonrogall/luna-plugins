@@ -1,0 +1,321 @@
+.luna-activity {
+	--la-bg: #101012;
+	--la-text: #fff;
+	--la-muted: rgba(255, 255, 255, 0.6);
+	--la-faint: rgba(255, 255, 255, 0.08);
+	--la-accent: #33ffee;
+	position: fixed;
+	z-index: 50;
+	display: flex;
+	flex-direction: column;
+	background: var(--la-bg);
+	color: var(--la-text);
+	font-size: 14px;
+}
+
+.luna-activity-scroll {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding-bottom: 48px;
+}
+
+/* Hero */
+.luna-activity-hero {
+	position: relative;
+	display: flex;
+	align-items: flex-end;
+	padding: 40px clamp(16px, 3vw, 40px) 24px;
+	overflow: hidden;
+}
+.luna-activity-hero.has-art {
+	min-height: 300px;
+}
+.luna-activity-hero-art {
+	position: absolute;
+	inset: 0;
+	background-size: cover;
+	background-position: center 30%;
+	opacity: 0;
+	transform: scale(1.03);
+	transition: opacity 0.5s ease, transform 0.8s ease;
+}
+.luna-activity-hero-art.is-loaded {
+	opacity: 1;
+	transform: none;
+}
+.luna-activity-hero::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(to bottom, transparent 20%, var(--la-bg) 100%),
+		linear-gradient(to right, color-mix(in srgb, var(--la-bg) 70%, transparent) 0%, transparent 70%);
+}
+.luna-activity-hero-text {
+	position: relative;
+	z-index: 1;
+	max-width: 720px;
+}
+.luna-activity-kicker {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--la-muted);
+}
+.luna-activity-title {
+	margin: 6px 0 0;
+	font-size: clamp(32px, 4.5vw, 52px);
+	font-weight: 800;
+	line-height: 1.05;
+	letter-spacing: -0.02em;
+}
+.luna-activity-subtitle {
+	margin: 10px 0 0;
+	color: var(--la-muted);
+	font-size: 15px;
+	line-height: 1.45;
+}
+.luna-activity-stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 18px;
+}
+.luna-activity-stat {
+	padding: 5px 12px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.12);
+	backdrop-filter: blur(12px);
+	font-size: 13px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.luna-activity-stat-muted {
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--la-muted);
+	font-weight: 500;
+}
+
+/* Month tabs, pinned while scrolling */
+.luna-activity-tabs {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	display: flex;
+	gap: 8px;
+	padding: 12px clamp(16px, 3vw, 40px);
+	overflow-x: auto;
+	background: var(--la-bg);
+	scrollbar-width: none;
+}
+.luna-activity-tabs::-webkit-scrollbar {
+	display: none;
+}
+.luna-activity-tab {
+	flex: none;
+	padding: 7px 16px;
+	border: none;
+	border-radius: 999px;
+	background: var(--la-faint);
+	color: var(--la-muted);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s;
+}
+.luna-activity-tab:hover {
+	background: rgba(255, 255, 255, 0.14);
+	color: var(--la-text);
+}
+.luna-activity-tab[aria-selected="true"] {
+	background: var(--la-text);
+	color: #000;
+}
+
+/* Artists */
+.luna-activity-body {
+	padding: 8px clamp(16px, 3vw, 40px) 0;
+}
+.luna-activity-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.luna-activity-row {
+	display: grid;
+	grid-template-columns: 36px 56px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 16px;
+	padding: 8px 12px;
+	border-radius: 10px;
+	cursor: pointer;
+	outline: none;
+	transition: background 0.15s;
+}
+.luna-activity-row:hover,
+.luna-activity-row:focus-visible {
+	background: rgba(255, 255, 255, 0.06);
+}
+.luna-activity-rank {
+	color: var(--la-muted);
+	font-size: 16px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+.luna-activity-row-top .luna-activity-rank {
+	color: var(--la-text);
+	font-size: 20px;
+	font-weight: 800;
+}
+.luna-activity-avatar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	overflow: hidden;
+	background: var(--la-faint);
+	color: var(--la-muted);
+	font-size: 20px;
+	font-weight: 700;
+}
+.luna-activity-avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+.luna-activity-row-main {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+.luna-activity-name {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: 15px;
+	font-weight: 600;
+}
+.luna-activity-meter {
+	height: 4px;
+	border-radius: 2px;
+	background: var(--la-faint);
+	overflow: hidden;
+}
+.luna-activity-meter-fill {
+	height: 100%;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.45);
+}
+.luna-activity-row:first-child .luna-activity-meter-fill {
+	background: var(--la-accent);
+}
+.luna-activity-count {
+	display: grid;
+	justify-items: end;
+	min-width: 112px;
+	font-variant-numeric: tabular-nums;
+}
+.luna-activity-streams {
+	white-space: nowrap;
+}
+.luna-activity-count b {
+	font-size: 16px;
+	font-weight: 700;
+}
+.luna-activity-count span,
+.luna-activity-royalty {
+	color: var(--la-muted);
+	font-size: 12px;
+}
+.luna-activity-royalty {
+	margin-top: 2px;
+}
+
+/* Loading placeholders */
+.luna-activity-loading .luna-activity-row {
+	cursor: default;
+}
+.luna-activity-loading .luna-activity-avatar,
+.luna-activity-loading .luna-activity-row-main,
+.luna-activity-loading .luna-activity-count {
+	animation: luna-activity-pulse 1.2s ease-in-out infinite;
+	background: var(--la-faint);
+}
+.luna-activity-loading .luna-activity-row-main {
+	height: 14px;
+	max-width: 260px;
+	border-radius: 4px;
+}
+.luna-activity-loading .luna-activity-count {
+	height: 14px;
+	border-radius: 4px;
+}
+@keyframes luna-activity-pulse {
+	50% {
+		opacity: 0.4;
+	}
+}
+
+/* Notes, empty and error states */
+.luna-activity-notes {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	gap: 12px;
+	margin-top: 32px;
+}
+.luna-activity-note {
+	padding: 16px 18px;
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.05);
+	line-height: 1.5;
+}
+.luna-activity-note b {
+	display: block;
+	margin-bottom: 4px;
+}
+.luna-activity-note p {
+	margin: 0;
+	color: var(--la-muted);
+	font-size: 13px;
+}
+.luna-activity-note-sub {
+	margin-top: 6px !important;
+}
+.luna-activity-note-link {
+	display: inline-block;
+	margin-top: 10px;
+	color: var(--la-text);
+	font-size: 13px;
+	font-weight: 600;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.luna-activity-empty,
+.luna-activity-error p {
+	margin: 24px 0 0;
+	color: var(--la-muted);
+	font-size: 15px;
+}
+.luna-activity-error small {
+	display: block;
+	margin-top: 4px;
+	color: rgba(255, 255, 255, 0.35);
+}
+.luna-activity-button {
+	margin-top: 16px;
+	padding: 8px 18px;
+	border: none;
+	border-radius: 999px;
+	background: var(--la-text);
+	color: #000;
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
