@@ -55,6 +55,12 @@
 		opacity 0.2s ease,
 		transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* Over the full-screen view, which hides the block */
+.oq-search-popover.oq-over-view {
+	background: #18181b !important;
+	border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
 .oq-search-block {
 	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 	transition-duration: 0.15s;
@@ -213,6 +219,17 @@
 	gap: 0.3em;
 }
 .oq-cap.has-buttons .oq-cap-buttons {
+	display: flex;
+}
+/* …or in the pinned navigation bar */
+.oq-header-buttons {
+	position: fixed;
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	font-family: inherit;
+}
+.oq-header-buttons .oq-cap-buttons {
 	display: flex;
 }
 .oq-cap-group {

@@ -5,7 +5,7 @@ import { navigate } from "./navigate";
 import { setupSidebarLink } from "./sidebar";
 import { createView, type View } from "./view";
 
-/** Not a TIDAL page: the view is drawn over whatever TIDAL shows for it */
+/** Unknown to TIDAL: the view covers its "page not found" */
 export const ROUTE = "/my-activity";
 
 const currentPath = () => (redux.store.getState().router?.currentPath ?? window.location.pathname).split(/[?#]/)[0].replace(/\/+$/, "") || "/";
@@ -35,7 +35,7 @@ export const setupRoute = (unloads: LunaUnloads) => {
 
 	const sync = () => {
 		if (currentPath() === ROUTE) return open();
-		// Should TIDAL send unknown pages elsewhere right away, stay open until the next navigation
+		// TIDAL may redirect the unknown path once: stay open
 		if (openedAt !== 0 && Date.now() - openedAt < 1500) {
 			openedAt = 0;
 			return;
@@ -43,12 +43,12 @@ export const setupRoute = (unloads: LunaUnloads) => {
 		close();
 	};
 
-	// The path is updated after the action, so read it a frame later
+	// The path updates after the action
 	redux.intercept("router/NAVIGATED", unloads, () => {
 		requestAnimationFrame(sync);
 	});
 
-	// Clicking a link to the page TIDAL thinks is open doesn't navigate: close for any link outside the view
+	// Links to the page TIDAL thinks is open don't navigate
 	const onClick = (e: MouseEvent) => {
 		if (!view?.visible) return;
 		const anchor = (e.target as Element | null)?.closest?.("a[href]");

@@ -5,9 +5,9 @@ import { isCompact } from "./compact";
 import { trace } from "./log";
 import { settings, settingsListeners } from "./Settings";
 
-/** As tall (and grey) as the sidebar's top section (--osb-head) and the queue's, so the three line up */
+/** Matches the sidebar's (--osb-head) and the queue's top sections */
 const HEAD = 60;
-/** Set by us on the page when its top padding was raised */
+/** On the page while we raised its top padding */
 const PADDED = "data-office-head-pad";
 
 const styles = `
@@ -21,10 +21,7 @@ const styles = `
 
 const findMain = () => document.querySelector<HTMLElement>('[data-test="main"]');
 
-/**
- * If TIDAL lays its header over the page and pads the page for it, the padding grows with the header,
- * so nothing ends up under it. Pages meant to run under the header (no padding) stay as they are.
- */
+/** Where TIDAL pads the page for its header, the padding grows with it; unpadded pages stay as they are */
 const fitPage = () => {
 	const main = findMain();
 	const header = document.getElementById("mainHeader");
@@ -63,7 +60,7 @@ const attach = (unloads: LunaUnloads) => {
 	});
 };
 
-/** Header height; part of the sidebar redesign, which sets the 60px it matches */
+/** Part of the sidebar redesign, whose 60px it matches */
 export const setupHeader = (unloads: LunaUnloads) => {
 	let active: Set<LunaUnload> | undefined;
 	const disable = () => {

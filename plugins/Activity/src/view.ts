@@ -42,7 +42,7 @@ const monthLabel = (month: Timeline) => {
 
 const sameMonth = (a?: Timeline, b?: Timeline) => a !== undefined && b !== undefined && a.month === b.month && a.year === b.year;
 
-/** TIDAL's page background, so the view blends in */
+/** TIDAL's page background */
 const backgroundOf = (node: HTMLElement | null) => {
 	for (let el = node; el !== null; el = el.parentElement) {
 		const color = getComputedStyle(el).backgroundColor;
@@ -51,17 +51,17 @@ const backgroundOf = (node: HTMLElement | null) => {
 	return "#101012";
 };
 
-/** Shown until a month's own image has loaded, so the header keeps its size */
+/** Until a month's image has loaded */
 const PLACEHOLDER = `url("data:image/jpeg;base64,${placeholderImage}")`;
-/** Whether a month ("2026-10") came with a subtitle, so its stand-in matches */
+/** Per month ("2026-10"): whether it had a subtitle, for the loading layout */
 const hasSubtitle = new Map<string, boolean>();
 const monthKey = (month: Timeline) => `${month.year}-${month.month}`;
-/** Images already shown once appear without fading in again */
+/** Shown before: no fade-in */
 const loadedImages = new Set<string>();
 
 const findMain = () => document.querySelector<HTMLElement>('[data-test="main"]') ?? document.querySelector<HTMLElement>("main");
 
-/** `onLeave` runs when the view opens a TIDAL page itself (an artist) */
+/** `onLeave`: the view navigated to an artist */
 export const createView = (onLeave: () => void): View => {
 	const root = h("section", P);
 	root.style.setProperty("--la-placeholder", PLACEHOLDER);
@@ -70,14 +70,14 @@ export const createView = (onLeave: () => void): View => {
 	root.append(scroller);
 
 	let visible = false;
-	/** Picked by the user; otherwise the running month */
+	/** The user's choice, else the running month */
 	let selected: Timeline | undefined;
 	let timeline: Timeline[] = [];
 	const shownMonth = () => selected ?? timeline.find(isRunningMonth) ?? timeline[0];
 	let loadToken = 0;
 	let loaded = false;
 
-	// Placed over TIDAL's content area, below its header (back / forward, search)
+	// Over TIDAL's content area, below its header
 	const place = () => {
 		const main = findMain();
 		if (main === null) return root.style.setProperty("display", "none");
@@ -117,7 +117,7 @@ export const createView = (onLeave: () => void): View => {
 	const prev = arrow(-1);
 	const next = arrow(1);
 	bar.append(prev, tabs, next);
-	/** The months the buttons were made for */
+	/** Months the buttons were made for */
 	let tabsFor = "";
 	const tabOf = new Map<string, HTMLButtonElement>();
 
@@ -148,7 +148,7 @@ export const createView = (onLeave: () => void): View => {
 	);
 	new ResizeObserver(updateArrows).observe(tabs);
 
-	/** Buttons only when the months change; otherwise just which one is selected */
+	/** Rebuilds buttons only when the months change */
 	const syncTabs = () => {
 		bar.style.display = timeline.length > 1 ? "" : "none";
 		const key = timeline.map(monthKey).join();
@@ -252,7 +252,7 @@ export const createView = (onLeave: () => void): View => {
 			img.src = url;
 			avatar.append(img);
 		};
-		// The initial stays underneath until (or unless) the picture loads
+		// Initial until the picture loads
 		avatar.append(h("span", undefined, entry.artist.name.slice(0, 1).toUpperCase()));
 		const picture = artistImage(entry.artist);
 		if (picture) showImage(picture);
@@ -353,7 +353,7 @@ export const createView = (onLeave: () => void): View => {
 	const load = (force = false) => {
 		const token = ++loadToken;
 		renderLoading();
-		// The server only answers for a given month, so the list of months comes first
+		// Top artists need a month, so the timeline comes first
 		getTimeline(force)
 			.then((months) => {
 				if (token !== loadToken) return;
@@ -387,10 +387,10 @@ export const createView = (onLeave: () => void): View => {
 			if (!visible) {
 				visible = true;
 				window.addEventListener("resize", place);
-				// TIDAL may swap its content area or resize it without a resize event
+				// TIDAL can swap or resize its content area without a resize event
 				interval = window.setInterval(place, 400);
 				scroller.scrollTop = 0;
-				// Keeps the chosen month, but picks up new streams of the running one
+				// Past months are kept; the running one may have new streams
 				if (!loaded || selected === undefined || isRunningMonth(selected)) load();
 			}
 		},

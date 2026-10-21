@@ -2,12 +2,12 @@ import type { LunaUnloads } from "@luna/core";
 import { observe } from "@luna/lib";
 
 const LINK_ATTR = "data-activity-link";
-/** TIDAL's own top entries (Music, Explore, …) */
+/** TIDAL's top entries (Music, Explore, …) */
 const LINKS = `#sidebar-content > a[data-test]:not([${LINK_ATTR}])`;
-/** Like TIDAL's entries, so styles written for those (Office's) apply to it too */
+/** TIDAL-like, so Office's styles apply */
 const DATA_TEST = "sidebar-my-activity";
 const LABEL = "My Activity";
-/** Three bars like the mobile app's: short, tallest, in between */
+/** The mobile app's icon: short, tallest, medium bar */
 const ICON = '<path d="M6 20v-7M12 20V4M18 20v-11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
 const ICON_SIZE = 18;
 const DEFAULT_FILL = 0.7;
@@ -30,16 +30,13 @@ export interface SidebarLink {
 	setActive(active: boolean): void;
 }
 
-/**
- * Adds "My Activity" below TIDAL's top sidebar entries, cloned from one of them so it looks native.
- * TIDAL marks the open page with extra (hashed) classes: they're learned by comparing the entries, never hardcoded.
- */
+/** "My Activity" below TIDAL's top entries, cloned from one. TIDAL's hashed "current" classes are learned by comparison. */
 export const setupSidebarLink = (unloads: LunaUnloads, href: string, onOpen: () => void): SidebarLink => {
 	let link: HTMLAnchorElement | undefined;
 	let activeClasses: string[] = [];
 	let active = false;
 
-	/** The classes only the current entry has */
+	/** Classes only the current entry has */
 	const learnActiveClasses = (links: HTMLAnchorElement[]) => {
 		if (links.length < 2) return;
 		const sets = links.map((node) => new Set(node.classList));
@@ -75,7 +72,7 @@ export const setupSidebarLink = (unloads: LunaUnloads, href: string, onOpen: () 
 			svg.setAttribute("viewBox", `${start} ${start} ${box.toFixed(2)} ${box.toFixed(2)}`);
 			svg.innerHTML = ICON;
 		}
-		// The innermost element holding the label, or a bare text node
+		// Innermost element with the label, else a bare text node
 		const label = [...node.querySelectorAll<HTMLElement>(":not(svg):not(svg *)")].reverse().find((el) => el.children.length === 0 && el.textContent?.trim());
 		if (label !== undefined) label.textContent = LABEL;
 		else {

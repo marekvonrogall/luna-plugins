@@ -12,6 +12,7 @@ type Settings = {
 	sidebar: boolean;
 	sidebarTint: boolean;
 	pinnedSidebar: boolean;
+	pinnedHeader: boolean;
 };
 export const settings = await ReactiveStore.getPluginStorage<Settings>("Office", {
 	queue: true,
@@ -22,6 +23,7 @@ export const settings = await ReactiveStore.getPluginStorage<Settings>("Office",
 	sidebar: true,
 	sidebarTint: false,
 	pinnedSidebar: true,
+	pinnedHeader: true,
 });
 
 export const settingsListeners = new Set<() => void>();
@@ -41,6 +43,7 @@ export const Settings = () => {
 	const [sidebar, setSidebar] = React.useState(settings.sidebar);
 	const [sidebarTint, setSidebarTint] = React.useState(settings.sidebarTint);
 	const [pinnedSidebar, setPinnedSidebar] = React.useState(settings.pinnedSidebar);
+	const [pinnedHeader, setPinnedHeader] = React.useState(settings.pinnedHeader);
 
 	return (
 		<LunaSettings>
@@ -119,6 +122,15 @@ export const Settings = () => {
 				checked={pinnedSidebar}
 				onChange={(_: unknown, checked: boolean) => {
 					setPinnedSidebar((settings.pinnedSidebar = checked));
+					changed();
+				}}
+			/>
+			<LunaSwitchSetting
+				title="Pinned navigation bar"
+				desc="Always keeps the bar with the back and forward buttons visible"
+				checked={pinnedHeader}
+				onChange={(_: unknown, checked: boolean) => {
+					setPinnedHeader((settings.pinnedHeader = checked));
 					changed();
 				}}
 			/>

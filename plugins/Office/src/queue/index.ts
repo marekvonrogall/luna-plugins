@@ -8,6 +8,7 @@ import { isCompact } from "../compact";
 import { settings, settingsListeners } from "../Settings";
 import { artistNames, coverUrl, formatDuration, formatLength, knownTrackInfo, songCount, trackInfo, type TrackInfo } from "./data";
 import { swapImage } from "../swapImage";
+import { marqueeLine, startMarquee } from "../marquee";
 
 type Element_ = redux.PlayQueueElement;
 type Mode = "next" | "history";
@@ -55,6 +56,27 @@ const play = (index: number) => {
 	PlayState.moveTo(index);
 	PlayState.play();
 };
+
+/** Title of a recent search; the badge sits next to the link */
+const TITLE_LINK = '[data-test="grid-item-detail-text-title-link"]';
+/** Results while typing ("direct hits"); the badge sits next to the title line */
+const HIT = '[data-test*="-direct-hit-"]:not([data-test*="--"])';
+const HIT_LINE = `${HIT} [data-wave-number-of-lines]:has(> a)`;
+const HIT_ROW = `${HIT} :has(> [data-wave-number-of-lines] > a)`;
+const TITLE_LINE = `${TITLE_LINK} [data-wave-number-of-lines], ${HIT_LINE}`;
+/** Titles as wide as their text, badge right behind, scrolling instead of "…". Unwrapped titles need every box up to the row to shrink. */
+const SEARCH_TITLE_CSS = `
+.oq-search-popover :has(> ${TITLE_LINK}) { display: flex !important; align-items: center !important; justify-content: flex-start !important; gap: 6px !important; min-width: 0 !important; }
+.oq-search-popover :has(> ${TITLE_LINK}) > ${TITLE_LINK} { flex: 0 1 auto !important; min-width: 0 !important; max-width: 100% !important; overflow: hidden !important; }
+.oq-search-popover :has(> ${TITLE_LINK}) > :not(${TITLE_LINK}) { flex: none !important; }
+.oq-search-popover :has(> ${TITLE_LINK}) > :not(${TITLE_LINK}):empty { display: none !important; }
+.oq-search-popover ${TITLE_LINK} > * { display: block !important; min-width: 0 !important; max-width: 100% !important; overflow: hidden !important; }
+.oq-search-popover :is(${HIT}, ${TITLE_LINK}) *:has([data-wave-number-of-lines] > a), .oq-search-popover *:has(> ${TITLE_LINK}), .oq-search-popover :is(${HIT}, ${TITLE_LINK}) > * { min-width: 0 !important; }
+.oq-search-popover ${HIT_ROW} { display: flex !important; align-items: center !important; justify-content: flex-start !important; gap: 6px !important; min-width: 0 !important; max-width: 100% !important; }
+.oq-search-popover ${HIT_ROW} > :not([data-wave-number-of-lines]) { flex: none !important; margin-left: 0 !important; }
+.oq-search-popover ${HIT_LINE} { flex: 0 1 auto !important; }
+.oq-search-popover :is(${TITLE_LINE}) { display: block !important; min-width: 0 !important; -webkit-line-clamp: unset !important; line-clamp: unset !important; ${marqueeLine} }
+`;
 
 const tidalAside = () => document.getElementById("playQueueSidebar");
 
@@ -812,15 +834,18 @@ const createPanel = (unloads: LunaUnloads) => {
 	const POPOVER = '[data-test="search-popover-popover"]';
 	const POPOVER_STYLES = ["left", "top", "width", "height"] as const;
 	let styledPopover: HTMLElement | undefined;
+	let stopTitles: (() => void) | undefined;
 	let fittedList: HTMLElement | undefined;
 	const listObserver = new ResizeObserver(() => place());
 	unloads.add(() => listObserver.disconnect());
 	const unstylePopover = () => {
+		stopTitles?.();
+		stopTitles = undefined;
 		if (styledPopover) {
-			styledPopover.classList.remove("oq-search-popover");
+			styledPopover.classList.remove("oq-search-popover", "oq-over-view");
 			for (const prop of POPOVER_STYLES) styledPopover.style.removeProperty(prop);
 		}
-		for (const prop of ["top", "height", "max-height"]) fittedList?.style.removeProperty(prop);
+		for (const prop of ["top", "height", "bottom", "max-height"]) fittedList?.style.removeProperty(prop);
 		unfitRows();
 		listObserver.disconnect();
 		styledPopover = fittedList = undefined;
@@ -886,12 +911,15 @@ const createPanel = (unloads: LunaUnloads) => {
 		walk(list, 0);
 	};
 
-	/** `listTop`: where TIDAL's list starts, below the search bar */
-	const stylePopover = (popover: HTMLElement, left: number, top: number, width: number, height: number, listTop: number) => {
-		if (popover !== styledPopover) unstylePopover();
+	/** `listTop`: the list's offset in the popup. The popup fits its results, up to `maxHeight` */
+	const stylePopover = (popover: HTMLElement, left: number, top: number, width: number, maxHeight: number, listTop: number) => {
+		if (popover !== styledPopover) {
+			unstylePopover();
+			stopTitles = startMarquee(popover, TITLE_LINE);
+		}
 		styledPopover = popover;
 		popover.classList.add("oq-search-popover");
-		setBox(popover, left, top, width, height, undefined, true);
+		setBox(popover, left, top, width, maxHeight, undefined, true);
 		const list = popover.firstElementChild as HTMLElement | null;
 		if (list !== fittedList) {
 			listObserver.disconnect();
@@ -901,8 +929,12 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!list) return;
 		list.style.setProperty("top", `${listTop}px`, "important");
 		list.style.setProperty("height", "auto", "important");
-		list.style.setProperty("max-height", `calc(100% - ${listTop}px)`, "important");
+		list.style.setProperty("bottom", "auto", "important");
+		// In px: a percentage of the shrunk popup would keep the list from growing
+		list.style.setProperty("max-height", `${Math.max(0, maxHeight - listTop)}px`, "important");
 		fitRows(list);
+		const listHeight = list.getBoundingClientRect().height;
+		if (listHeight > 0) popover.style.setProperty("height", `${Math.ceil(listTop + listHeight)}px`, "important");
 		// The hint copies this row's look
 		const viewAll = list.querySelector<HTMLElement>('[data-test="view-all-results"]');
 		const viewAllText = viewAll?.querySelector("span");
@@ -947,6 +979,9 @@ const createPanel = (unloads: LunaUnloads) => {
 		proxies.set(def.test, button);
 	}
 	capButtons.append(contentGroup, actionGroup);
+	/** Holds the buttons in the pinned navigation bar */
+	const headerButtons = h("div", "oq-header-buttons");
+	const headerPinned = () => settings.pinnedHeader && !isCompact();
 
 	const CONTENT_TOGGLES = ["toggle-similar-tracks", "toggle-credits", "toggle-lyrics"];
 	/** The header child holding the full-screen buttons */
@@ -1001,6 +1036,11 @@ const createPanel = (unloads: LunaUnloads) => {
 		}
 	};
 	const pressTidalButton = (test: string) => tidalButton(test)?.click();
+	// Outside the panel and its click handler
+	headerButtons.addEventListener("click", (e) => {
+		const button = (e.target as Element).closest<HTMLElement>('[data-action="proxy"]');
+		if (button) pressTidalButton(button.dataset.proxy ?? "");
+	});
 
 	const placeholderOf = (row: Element) => row.querySelector<HTMLElement>(":scope .oq-lyrics-missing");
 	const syncLyricsPlaceholder = (view: HTMLElement | undefined) => {
@@ -1044,27 +1084,57 @@ const createPanel = (unloads: LunaUnloads) => {
 		centeredButtons = undefined;
 		centeredShift = 0;
 	};
-	/** `closing`: the view is still sliding away, the copies go right away */
-	const layoutFullscreenButtons = (view: HTMLElement | undefined, queueOpen: boolean, columnLeft: number, columnWidth: number, closing: boolean) => {
+	/** Roomiest spacing that fits `available` px */
+	const fitLevels = (available: number) => {
+		const levels = ["is-loose", "is-snug", "is-tight", "is-tighter"];
+		capButtons.classList.remove(...levels);
+		capButtons.style.removeProperty("--oq-cap-extra");
+		for (const level of levels) {
+			capButtons.classList.add(level);
+			if (capButtons.scrollWidth <= available) break;
+			if (level !== "is-tighter" && level !== "is-tight") capButtons.classList.remove(level);
+		}
+		return capButtons.scrollWidth <= available;
+	};
+
+	/** Left of the search bar, which must be fitted first */
+	const placeHeaderButtons = () => {
+		const header = document.getElementById("mainHeader");
+		const search = header?.querySelector<HTMLElement>('[data-test="search-popover-container"]');
+		if (!header || !search) return headerButtons.style.setProperty("visibility", "hidden");
+		const bar = header.getBoundingClientRect();
+		const field = search.getBoundingClientRect();
+		const arrows = header.querySelector('[data-test="navigation-arrows"]')?.getBoundingClientRect();
+		const gap = 12;
+		const right = field.left - gap;
+		const fits = fitLevels(right - ((arrows?.right ?? bar.left) + gap));
+		headerButtons.style.left = `${Math.round(right - capButtons.scrollWidth)}px`;
+		headerButtons.style.top = `${Math.round(bar.top)}px`;
+		headerButtons.style.height = `${Math.round(bar.height)}px`;
+		// No room: hidden rather than over the arrows
+		if (fits) headerButtons.style.removeProperty("visibility");
+		else headerButtons.style.setProperty("visibility", "hidden");
+	};
+
+	/** `closing`: the view is still sliding away, the copies go right away. `inHeader`: copies go to the pinned navigation bar */
+	const layoutFullscreenButtons = (view: HTMLElement | undefined, queueOpen: boolean, columnLeft: number, columnWidth: number, closing: boolean, inHeader: boolean) => {
 		if (view !== mirroredView) {
 			headerObserver.disconnect();
 			mirroredView = view;
 			const header = view?.querySelector(":scope > header");
 			if (header) headerObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-pressed", "class", "href", "aria-label", "viewBox"] });
 		}
-		cap.classList.toggle("has-buttons", view !== undefined && queueOpen && !closing);
-		if (view && queueOpen && !closing) {
+		cap.classList.toggle("has-buttons", view !== undefined && queueOpen && !closing && !inHeader);
+		const host = inHeader ? headerButtons : cap;
+		if (capButtons.parentElement !== host) host.appendChild(capButtons);
+		if (!inHeader) headerButtons.remove();
+		else if (!headerButtons.isConnected) document.body.appendChild(headerButtons);
+		if (view && !closing && inHeader) updateProxies();
+		else if (view && queueOpen && !closing) {
 			updateProxies();
 			// Roomiest level that fits, with equal margins
-			const levels = ["is-loose", "is-snug", "is-tight", "is-tighter"];
 			const margin = 12;
-			capButtons.classList.remove(...levels);
-			capButtons.style.removeProperty("--oq-cap-extra");
-			for (const level of levels) {
-				capButtons.classList.add(level);
-				if (cap.clientWidth - capButtons.scrollWidth >= margin * 2) break;
-				if (level !== "is-tighter" && level !== "is-tight") capButtons.classList.remove(level);
-			}
+			fitLevels(cap.clientWidth - margin * 2);
 			// Leftover room goes into the 4 gaps
 			const extra = Math.floor((cap.clientWidth - capButtons.scrollWidth - margin * 2) / 4);
 			if (extra > 0) capButtons.style.setProperty("--oq-cap-extra", `${Math.min(extra, 8)}px`);
@@ -1076,8 +1146,8 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!row) return;
 		centeredButtons = row;
 		if (!row.classList.contains("oq-fs-buttons")) row.classList.add("oq-fs-buttons");
-		// Hidden under the open queue, which shows copies
-		row.classList.toggle("oq-row-covered", queueOpen);
+		// Hidden under the open queue or by the pinned navigation bar, which show copies
+		row.classList.toggle("oq-row-covered", queueOpen || inHeader);
 		const rect = row.getBoundingClientRect();
 		// TIDAL's position without our shift
 		const left = rect.left - centeredShift;
@@ -1109,6 +1179,18 @@ const createPanel = (unloads: LunaUnloads) => {
 	const defaultQueueWidth = () =>
 		parseFloat(getComputedStyle(document.querySelector(".has-footer-player") ?? document.documentElement).getPropertyValue("--playQueueWidth")) || 350;
 
+	/** Layer for the search results: the panel's (set once the queue opens), else TIDAL's queue's, else the player bar's */
+	const FALLBACK_LAYER = 100;
+	const queueLayer = () => {
+		const own = parseInt(panel.style.zIndex);
+		if (!Number.isNaN(own)) return own;
+		const aside = tidalAside();
+		const tidal = [aside?.parentElement, aside].map((node) => (node ? parseInt(getComputedStyle(node).zIndex) : NaN)).find((z) => !Number.isNaN(z));
+		if (tidal !== undefined) return tidal;
+		const footer = document.getElementById("footerPlayer");
+		return footer ? parseInt(getComputedStyle(footer).zIndex) : NaN;
+	};
+
 	/** Blocks, search bar and results, around the queue or where it would be */
 	const layoutHeader = (queueRect: DOMRect | undefined) => {
 		const clientWidth = document.documentElement.clientWidth;
@@ -1127,17 +1209,20 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (anchor && anchor.before) {
 			// Above the sidebar too: in narrow windows the results reach over it
 			const sidebar = document.querySelector('[data-test="main-layout-sidebar-wrapper"]');
-			const layers = [parseInt(panel.style.zIndex), sidebar ? parseInt(getComputedStyle(sidebar).zIndex) + 1 : NaN].filter((z) => !Number.isNaN(z));
-			const layer = layers.length > 0 ? Math.max(...layers) : NaN;
-			if (!Number.isNaN(layer)) raiseAbove(anchor.before, layer);
-			mountBlocks(anchor, Number.isNaN(layer) ? anchor.zIndex : String(layer));
+			const layers = [queueLayer(), sidebar ? parseInt(getComputedStyle(sidebar).zIndex) + 1 : NaN].filter((z) => !Number.isNaN(z));
+			const layer = layers.length > 0 ? Math.max(...layers) : FALLBACK_LAYER;
+			raiseAbove(anchor.before, layer);
+			mountBlocks(anchor, String(layer));
 		}
 		const origin = blockProbe.getBoundingClientRect();
 
-		layoutFullscreenButtons(view, queueRect !== undefined, queueLeft, width, closing);
+		// A pinned navigation bar keeps search usable in the full-screen view
+		const pinned = fullscreen !== undefined && headerPinned();
+		const searchable = fullscreen === undefined || pinned;
+		layoutFullscreenButtons(view, queueRect !== undefined, queueLeft, width, closing, pinned);
 
 		// Search block: left of the queue, down to the end of the big cover
-		const popover = fullscreen ? null : document.querySelector<HTMLElement>(POPOVER);
+		const popover = searchable ? document.querySelector<HTMLElement>(POPOVER) : null;
 		const searching = popover !== null && anchor !== undefined;
 		const searchLeft = searching && queueRect ? queueLeft - width : queueLeft;
 		const bottom = heroBottom || top + 58 + Math.min(width, window.innerHeight * 0.46);
@@ -1145,17 +1230,24 @@ const createPanel = (unloads: LunaUnloads) => {
 		// Merges with the queue's top section
 		panel.classList.toggle("is-joined", searching && queueRect !== undefined);
 
-		if (!fullscreen) fitSearch(searchLeft);
+		if (searchable) fitSearch(searchLeft);
+		if (pinned) placeHeaderButtons();
 		if (searching && popover) {
 			// First result lines up with the queue's big cover
 			const headerBottom = document.getElementById("mainHeader")?.getBoundingClientRect().bottom ?? top;
-			const listTop = Math.max(0, (queueTop || headerBottom) - top);
-			const list = stylePopover(popover, searchLeft, top, width, bottom - top, listTop);
+			// Below the search bar, keeping it and the profile picture uncovered
+			const popoverTop = Math.max(top, headerBottom);
+			const listTop = Math.max(0, (queueTop || headerBottom) - popoverTop);
+			const list = stylePopover(popover, searchLeft, popoverTop, width, bottom - popoverTop, listTop);
+			// The full-screen view covers the block, so the popup gets its own background
+			popover.classList.toggle("oq-over-view", pinned);
 			// No results yet: the hint
 			const empty = !list || list.height < 1 || popover.firstElementChild?.childElementCount === 0;
 			searchHint.hidden = !empty;
-			searchHint.style.top = `${listTop}px`;
-			const blockBottom = empty ? top + listTop + searchHint.offsetHeight : list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
+			// The block starts higher, behind the search bar
+			const hintTop = popoverTop - top + listTop;
+			searchHint.style.top = `${hintTop}px`;
+			const blockBottom = empty ? top + hintTop + searchHint.offsetHeight : list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
 			setBox(searchBlock, searchLeft, top, width, blockBottom - top, origin);
 		} else unstylePopover();
 		cutQueueOut(searching ? document.querySelector<HTMLElement>(BACKDROP) : null, queueRect && open ? panel.getBoundingClientRect() : undefined);
@@ -1172,6 +1264,20 @@ const createPanel = (unloads: LunaUnloads) => {
 	/** Matches the class's name part, so a new hash doesn't matter (the store value is stale in current TIDAL) */
 	const isTidalQueueOpen = (aside: HTMLElement) =>
 		[...aside.classList].some((name) => /^_?isOpen(?:_|$)/.test(name)) || redux.store.getState().view?.showPlayQueueAside === true;
+
+	/** While searching TIDAL lowers its queue's layer; ours keeps the previous one */
+	const isSearchActive = (wrapper: HTMLElement) => [...wrapper.classList].some((name) => /^_?searchIsActive(?:_|$)/.test(name));
+	let calmZIndex = "";
+	const layerOf = (wrapper: HTMLElement, aside: HTMLElement) => {
+		const own = [wrapper, aside].map((node) => getComputedStyle(node).zIndex).find((z) => z !== "auto") ?? "";
+		if (!isSearchActive(wrapper)) return (calmZIndex = own);
+		let layer = parseInt(calmZIndex || own);
+		// And stays above the full-screen view
+		const view = fullscreenView();
+		const viewLayer = view ? parseInt(getComputedStyle(view).zIndex) : NaN;
+		if (!Number.isNaN(viewLayer) && (Number.isNaN(layer) || layer <= viewLayer)) layer = viewLayer + 1;
+		return Number.isNaN(layer) ? own : String(layer);
+	};
 
 	let placeFailed = false;
 	const place = () => {
@@ -1212,7 +1318,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		const bottom = footer && footer.height > 0 ? footer.top : window.innerHeight;
 		const origin = probe.getBoundingClientRect();
 		const width = document.documentElement.clientWidth - rect.left;
-		const zIndex = [wrapper, aside].map((node) => getComputedStyle(node).zIndex).find((z) => z !== "auto") ?? "";
+		const zIndex = layerOf(wrapper, aside);
 		// Top section: from the title bar down to TIDAL's queue
 		const titleBar = titleBarBottom();
 		const top = rect.top - titleBar >= 1 ? titleBar : rect.top;
@@ -1802,6 +1908,7 @@ const createPanel = (unloads: LunaUnloads) => {
 		panel.remove();
 		probe.remove();
 		searchBlock.remove();
+		headerButtons.remove();
 		blockProbe.remove();
 		unfitSearch();
 		unstylePopover();
@@ -1827,7 +1934,7 @@ export const setupQueue = (unloads: LunaUnloads) => {
 		if (!wanted) return disable();
 		active = new Set();
 		// Hides TIDAL's queue but keeps its space
-		new StyleTag("Office-queue", active, `${styles}\n#playQueueSidebar { visibility: hidden !important; }`);
+		new StyleTag("Office-queue", active, `${styles}\n#playQueueSidebar { visibility: hidden !important; }\n${SEARCH_TITLE_CSS}`);
 		try {
 			createPanel(active);
 		} catch (err) {

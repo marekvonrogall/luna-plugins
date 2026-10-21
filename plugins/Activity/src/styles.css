@@ -99,7 +99,7 @@
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
-/* Days left: plain text next to the pills */
+/* Days left: plain text */
 .luna-activity-days {
 	align-self: center;
 	padding: 0 4px;
@@ -111,7 +111,7 @@
 	border-radius: 4px;
 }
 
-/* Stand-ins while a month loads */
+/* Hero stand-ins while loading */
 .luna-activity-skeleton {
 	color: transparent !important;
 	background: var(--la-faint) !important;
@@ -124,7 +124,7 @@
 	border-radius: 6px;
 }
 
-/* Month tabs, pinned while scrolling */
+/* Month tabs (sticky) */
 .luna-activity-tabbar {
 	position: sticky;
 	top: 0;
@@ -146,7 +146,7 @@
 .luna-activity-tabs::-webkit-scrollbar {
 	display: none;
 }
-/* Fades the cut-off end(s) of the row */
+/* Fade cut-off ends */
 .luna-activity-tabbar.is-overflowing .luna-activity-tabs {
 	-webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
 	mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);

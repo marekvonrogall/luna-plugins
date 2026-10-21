@@ -1,6 +1,6 @@
 import { redux, TidalApi } from "@luna/lib";
 
-/** Same service the mobile app's "My Activity" uses */
+/** The mobile app's "My Activity" service */
 const API = "https://api.tidal.com/v2/my-activity";
 
 export interface Timeline {
@@ -19,7 +19,7 @@ export interface ActivityArtist {
 	id: number;
 	name: string;
 	picture?: string | null;
-	/** An album cover TIDAL shows for artists without a picture */
+	/** Album cover TIDAL shows instead of a missing picture */
 	selectedAlbumCoverFallback?: string | null;
 }
 
@@ -70,7 +70,7 @@ export class HttpError extends Error {
 
 const pad = (value: number, length = 2) => String(value).padStart(length, "0");
 
-/** Local time with its offset, e.g. 2026-10-21T16:21:00.000+02:00: the server picks "this month" from it */
+/** e.g. 2026-10-21T16:21:00.000+02:00; the server derives "this month" from it */
 const zonedNow = () => {
 	const now = new Date();
 	const offset = -now.getTimezoneOffset();
@@ -83,7 +83,7 @@ const zonedNow = () => {
 	);
 };
 
-/** "en" from TIDAL's language setting ("en_US", "de-DE", …) */
+/** "en" from "en_US", "de-DE", … */
 const language = () => {
 	const setting = (redux.store.getState().settings as { language?: string } | undefined)?.language ?? navigator.language;
 	return (setting || "en").split(/[_-]/)[0];
@@ -102,7 +102,7 @@ const request = async (url: string, retries = 2): Promise<Response> => {
 	}
 };
 
-/** The server's own explanation of a failed request, if it sent one */
+/** Includes the server's message, if any */
 const failed = async (res: Response) => {
 	let detail = "";
 	try {
@@ -126,7 +126,7 @@ const get = async <T>(path: string, extra: Record<string, string> = {}): Promise
 	return (await res.json()) as T;
 };
 
-/** Past months don't change anymore; the running one (and the list of months) is reloaded after a while */
+/** Past months are final; the running month and the timeline are refetched after a while */
 const FRESH_FOR = 5 * 60_000;
 const cache = new Map<string, { at: number; promise: Promise<unknown> }>();
 
@@ -144,7 +144,7 @@ export const isRunningMonth = (month: Timeline) => {
 	return month.year === now.getFullYear() && month.month === now.getMonth() + 1;
 };
 
-/** The months with activity, newest first; the current month if the server lists none */
+/** Months with activity, newest first (the current month if none) */
 export const getTimeline = (force = false) =>
 	cached("timeline", true, force, async () => {
 		const { timeline } = await get<{ timeline?: Timeline[] | null }>("timeline");
@@ -154,7 +154,7 @@ export const getTimeline = (force = false) =>
 		return [{ month: now.getMonth() + 1, year: now.getFullYear() }];
 	});
 
-/** Top artists of a month (months count from 1) */
+/** Months count from 1 */
 export const getTopArtists = (month: Timeline, force = false) =>
 	cached(`${month.year}-${month.month}`, isRunningMonth(month), force, () =>
 		get<TopArtists>("top-artists", { month: String(month.month), year: String(month.year) }),
@@ -162,14 +162,14 @@ export const getTopArtists = (month: Timeline, force = false) =>
 
 const imageUrl = (uuid: string, size: number) => `https://resources.tidal.com/images/${uuid.split("-").join("/")}/${size}x${size}.jpg`;
 
-/** The artist's picture, or the album cover TIDAL uses instead, like in My Collection */
+/** Picture, else TIDAL's album cover fallback */
 export const artistImage = (artist: Pick<ActivityArtist, "picture" | "selectedAlbumCoverFallback"> | null | undefined, large = false) => {
 	if (artist?.picture) return imageUrl(artist.picture, large ? 750 : 320);
 	if (artist?.selectedAlbumCoverFallback) return imageUrl(artist.selectedAlbumCoverFallback, large ? 640 : 320);
 	return undefined;
 };
 
-/** For artists the activity lists without either: looked up like any artist page */
+/** For artists listed without either */
 export const lookUpArtistImage = async (id: number) => {
 	const stored = redux.store.getState().content?.artists?.[id] as ActivityArtist | undefined;
 	if (stored?.picture || stored?.selectedAlbumCoverFallback) return artistImage(stored);
