@@ -170,7 +170,7 @@ export const createView = (onLeave: () => void): View => {
 		const art = h("div", `${P}-hero-art`);
 		const activity = data?.activity;
 		const images = activity?.images ?? [];
-		const image = images.find((img) => img.orientation === "LANDSCAPE") ?? images[0];
+		const image = images.find((img) => img.id === "LANDSCAPE" || img.orientation === "LANDSCAPE") ?? images.find((img) => img.id === "DEFAULT") ?? images[0];
 		const url = image?.url ?? artistImage(data?.artists?.[0]?.artist, true);
 		if (url) {
 			hero.classList.add("has-art");

@@ -5,7 +5,7 @@ import { isCompact } from "./compact";
 import { trace } from "./log";
 import { settings, settingsListeners } from "./Settings";
 
-/** As tall as the sidebar's top section (--osb-head) and the queue's, so the three line up */
+/** As tall (and grey) as the sidebar's top section (--osb-head) and the queue's, so the three line up */
 const HEAD = 60;
 /** Set by us on the page when its top padding was raised */
 const PADDED = "data-office-head-pad";
@@ -15,6 +15,7 @@ const styles = `
 	box-sizing: border-box !important;
 	height: ${HEAD}px !important;
 	min-height: ${HEAD}px !important;
+	background: #18181b !important;
 }
 `;
 
