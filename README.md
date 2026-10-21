@@ -2,14 +2,84 @@
 
 A collection of plugins for [TidaLuna](https://github.com/Inrixia/TidaLuna), the client mod for the TIDAL desktop app.
 
-| Plugin                    | Purpose                                                                                                               |
-|---------------------------|-----------------------------------------------------------------------------------------------------------------------|
-| [Comité](#comité)         | Half-star song ratings, stored in your own TIDAL playlists, with averages on every cover and a dedicated rating mode  |
-| [Librarian](#librarian)   | Downloads songs, albums and playlists as tagged files into a structured local library, skipping what you already have |
-| [Collector](#collector)   | Turns songs, playlists, artists or your whole collection into complete albums inside one playlist                     |
-| [Translator](#translator) | Shows a translation under every line of the lyrics, and which languages a playlist is in                              |
+| Plugin                    | What it does                                                                         |
+|---------------------------|--------------------------------------------------------------------------------------|
+| [Activity](#activity)     | Your monthly listening statistics from the TIDAL mobile app, now on desktop          |
+| [Collector](#collector)   | Playlist tools: manage many playlists at once and collect complete albums or artists |
+| [Comité](#comité)         | Rate every song from 0 to 5 stars, the way the old iPods did                         |
+| [Librarian](#librarian)   | Download songs as FLAC files into a neatly organized music library                   |
+| [Office](#office)         | A design overhaul for TIDAL: new queue, player, sidebar and search bar               |
+| [Translator](#translator) | Translations beneath the lyrics, and which languages a playlist is in                |
 
 All plugins are distributed through a single store. See [Installation](#installation).
+
+---
+
+## Activity
+
+The TIDAL mobile app shows you what you listened to each month. Activity brings these statistics to the desktop.
+
+- **My Activity tab:** A new *My Activity* tab in the sidebar opens your listening statistics.
+- **Every month:** Browse through all past months and see how your taste changed.
+- **Top artists:** See which artists you listened to most, and how often you streamed each of them.
+
+<!-- TODO image: the "My Activity" tab in the sidebar -->
+<!-- TODO image: the Activity page showing the month tabs and the list of top artists -->
+<p align="center">
+  <img alt="Top artists of the month" src="resources/Activity/activity_top-artists.png" width="800">
+</p>
+
+---
+
+## Collector
+
+Collector puts all your playlist tools in one place. Right-click a song, a selection of songs, an album or a playlist
+and choose **Playlist Tools**.
+
+<!-- TODO image: the right-click menu with "Playlist Tools" opened -->
+<p align="center">
+  <img alt="Playlist Tools in the context menu" src="resources/Collector/collector_context-menu.png" width="800">
+</p>
+
+### Add and remove in one go
+
+- **See where a song already is:** When adding a song, every playlist that already contains it is marked with a
+  checkmark, so you never add a song twice by accident. Playlists that partially contain your selection are marked with
+  a dash.
+
+<p align="center">
+  <img alt="Choosing playlists with checkmarks" src="resources/Collector/collector_playlists.png" width="800">
+</p>
+
+- **Add to multiple playlists:** Tick as many playlists as you like and add the songs to all of them at once.
+- **Remove from multiple playlists:** Untick playlists to remove the songs from all of them at once.
+
+<p align="center">
+  <img alt="Choosing playlists with checkmarks" src="resources/Collector/collector_playlist-selector.png" width="300">
+</p>
+
+### Collect albums and artists
+
+Found a few songs you like? Let Collector get you the rest.
+
+- **Collect Album(s):** Takes the songs you selected and adds the complete albums they come from to a playlist.
+- **Collect Artist(s):** Takes the songs you selected and adds every album, EP and single of their artists to a
+  playlist: complete discographies with one click.
+- **No playlist limit:** TIDAL playlists hold at most 20,000 songs. When a playlist is full, Collector simply creates a
+  new one and keeps going.
+- **Exclusion playlists:** Choose playlists whose songs you never want collected. Those songs are left out, while the
+  rest of their album is still added.
+
+<!-- TODO image: the "Collect Album(s)" / "Collect Artist(s)" dialog with target playlists and the exclusion playlist option -->
+<!-- TODO image: the progress notification while collecting, or the summary notification at the end -->
+<p align="center">
+  <img alt="Choosing where to collect to" src="resources/Collector/collector_selection.png" width="300">
+  <img alt="Choosing where to collect to" src="resources/Collector/collector_target.png" width="300">
+</p>
+
+<p align="center">
+  <img alt="Collecting in progress" src="resources/Collector/collector_progress.png" width="300">
+</p>
 
 ---
 
@@ -17,221 +87,137 @@ All plugins are distributed through a single store. See [Installation](#installa
 
 Inspired by the rating system of the old click wheel iPods, Comité brings song ratings to TIDAL.
 
-Every song can be rated from half a star to five stars. Each of the ten rating steps is backed by a playlist of your
-choosing: rating a song adds it to that playlist and removes it from the others. Because ratings live in ordinary TIDAL
-playlists, they need no separate database, sync to all your devices, and remain usable in any TIDAL client, with or
-without the plugin.
-
-Ratings are shown wherever you browse: in the player, in track lists, and as average badges on album, playlist, and
-artist covers.
+- **Rate every song:** Give any song from 0 to 5 stars, in half-star steps, right from the player or any track list.
+- **See the averages:** Albums, artists and playlists show the average rating of their songs on their cover.
+- **Your ratings everywhere:** Ratings are stored in your own TIDAL playlists, so they sync to all your devices.
 
 <p align="center">
-  <img src="resources/Comit%C3%A9/comit%C3%A9_album-view.png" width="400">
-  <img src="resources/Comit%C3%A9/comit%C3%A9_playlist.png" width="400">
+  <img alt="Ratings on an album" src="resources/Comit%C3%A9/comit%C3%A9_album-view.png" width="400">
+  <img alt="Ratings in a playlist" src="resources/Comit%C3%A9/comit%C3%A9_playlist.png" width="400">
 </p>
-
-### Rating songs
-
-There are three ways to rate a song:
-
-- **Player bar:** Five stars next to the current song's title. Click the left half of a star for a half rating, the
-  right half for a full one. When the player gets narrow, the stars collapse into a single button that opens them in a
-  popover.
-- **Rating column:** Track lists (albums, playlists, favorites, artist top tracks, search results) gain a *Rating*
-  column that works the same way. It hides automatically when there is not enough room, so title, artist and TIDAL's own
-  columns keep priority.
-- **Rating mode:** A full-screen mode for rating many songs in a row, described below.
-
-Clicking a song's current rating again removes it. The first time you use a rating step, Comité asks which playlist
-should hold it. Assignments can be changed at any time in the plugin settings, and playlists that are already used for
-another step are not offered.
 
 ### Rating mode
 
-Album, playlist, artist and mix pages, including artist and track radios, get a **Rate** button next to TIDAL's *More*
-button. On the *Tracks* page of My Collection it sits next to the page title. Rating mode collects every song from that
-source that does not have a rating yet and plays them one after another, so you can rate as you listen.
+Got a lot of unrated songs? Hit **Rate** on any album, playlist or artist and Comité plays its unrated songs one after
+another, so you can rate as you listen. There are two rating modes:
+
+- **Stars:** Pick a rating from 0 to 5 stars and the next song starts right away.
+- **Higher / Lower:** Not sure how many stars a song deserves? Just compare it with songs you have already rated and
+  pick the one you like more. Comité works out the rating for you.
 
 <p align="center">
-  <img src="resources/Comit%C3%A9/comit%C3%A9_player-rating.png" width="400">
-  <img src="resources/Comit%C3%A9/comit%C3%A9_higher-lower.png" width="400">
+  <img alt="Stars rating mode" src="resources/Comit%C3%A9/comit%C3%A9_player-rating.png" width="400">
+  <img alt="Higher / Lower rating mode" src="resources/Comit%C3%A9/comit%C3%A9_higher-lower.png" width="400">
 </p>
-
-Rating mode offers two ways to rate.
-
-**Stars:** You rate each song directly on the five-star scale. The next song starts as soon as you choose. The stars
-take on the main colour of the current cover. If you have already rated another version of the same song, such as the
-single, a live recording or a remix, Comité shows that rating as a reference.
-
-**Higher / Lower:** Instead of picking a number, you compare the new song against songs you have already rated and
-choose the one you like more. Comité picks opponents close to the new song's current estimate and refines the estimate
-with an Elo-style score after every duel. A song is placed after four to eight duels, as soon as its estimate stops
-moving. Duels can also nudge the songs you compared against: if a rated song ends up in a different half-star step, it
-is moved there when the session ends, and the summary lists every change. This mode becomes available once every rating
-step holds at least one song.
-
-Further options:
-
-- **Order:** Shuffle (default) or the original album or playlist order, switchable during the session.
-- **Start position:** Each song can start at a set percentage of its length to skip intros. Configure this in the plugin
-  settings.
-- **Summary:** When you finish or leave, a notification reports how many songs were rated, skipped or left unrated.
-
-#### Keyboard shortcuts
-
-| Mode           | Key                  | Action                                             |
-|----------------|----------------------|----------------------------------------------------|
-| Stars          | `1` to `5`           | Rate with that many stars                          |
-| Stars          | `Shift` + `1` to `5` | Add a half star, for example `Shift` + `3` for 3.5 |
-| Stars          | `S` or `→`           | Skip the song                                      |
-| Higher / Lower | `←` / `→`            | The left (new) or right (rated) song is better     |
-| Higher / Lower | `↓`                  | Can't decide                                       |
-| Higher / Lower | `A` / `D`            | Listen to the left or right song                   |
-| Higher / Lower | `S`                  | Skip the song                                      |
-| Both           | `Space`              | Play / pause                                       |
-| Both           | `Esc`                | End the session                                    |
-
-### Average ratings
-
-Covers show a badge with the average rating of their songs:
-
-- **Albums, EPs and singles** show their average as soon as one of their songs is rated.
-- **Artists** show the average of all their rated songs on their profile and wherever their picture appears. On the
-  profile, a second badge (pink) shows the average of the songs the artist released alone, without collaborations,
-  whenever it differs.
-- **Playlists** show their average once 75% of their songs are rated. Playlists with 500 or more songs are not evaluated
-  automatically to avoid unnecessary requests.
-
-Shift-click any cover to show its average regardless of these limits. For large playlists, a progress ring fills while
-the playlist is read.
-
-### Settings
-
-| Setting                   | Description                                                                            |
-|---------------------------|----------------------------------------------------------------------------------------|
-| Rating playlists          | One playlist per half-star step, from 0.5 to 5. Can be changed or cleared at any time. |
-| Rating mode: start at (%) | Where each song starts in rating mode, as a percentage of its length.                  |
-
-Renamed rating playlists are picked up automatically on startup. A rating playlist is only cleared if TIDAL confirms
-that it no longer exists.
 
 ---
 
 ## Librarian
 
-Librarian downloads music from TIDAL into a local library with a consistent folder structure and complete metadata. It
-is based on the original SongDownloader plugin and adds library awareness and a configurable file layout.
-
-Right-click a song, a selection of songs, an album or a playlist and choose **Download tracks**.
+Librarian downloads your music from TIDAL and keeps it in a tidy local library. Right-click a song, a selection of
+songs, an album or a playlist and choose **Download tracks**.
 
 <p align="center">
-  <img src="resources/Librarian/librarian_context-menu.png">
+  <img alt="Download tracks in the context menu" src="resources/Librarian/librarian_context-menu.png">
 </p>
 
-### Features
-
-- **Library-aware downloads:** With a default folder set, Librarian scans your library once before each download and
-  skips every song that is already there. Re-downloading a playlist only fetches what is new.
-- **Configurable file layout:** A path format such as `{artist}/{album}/{title}` places every file into its own
-  subfolders. All metadata fields provided by Luna are available as placeholders.
-- **Complete metadata:** FLAC and M4A files get title, artists, album, album artist, track and disc number, date,
-  genre, label, ISRC, ReplayGain, lyrics and the album cover embedded.
-- **Live progress:** A progress notification shows the current song, its size and the overall progress, and can be
-  cancelled at any time.
-- **Summary:** At the end, a notification reports how many songs were downloaded, skipped because they already exist, or
-  unavailable.
-- **Concurrent downloads:** Multiple downloads can run in parallel, making it extremely fast.
+- **FLAC files:** Songs are downloaded as `.flac` files.
+- **Full metadata:** Every file comes with its title, artists, album, track number, lyrics, cover and more.
+- **Fast:** Several songs download at the same time.
+- **Organized library:** Songs are sorted into folders by artist and album (`Artist/Album/Title.flac`). The layout can
+  be
+  changed in the settings.
+- **Only what's missing:** Librarian checks your library first and only downloads songs you don't have yet. Download a
+  playlist again and you only get the new songs.
 
 <p align="center">
-  <img src="resources/Librarian/librarian_concurrent-downloads.png">
+  <img alt="Concurrent downloads" src="resources/Librarian/librarian_concurrent-downloads.png">
 </p>
-
-### Reliability
-
-Librarian addresses several problems of the original download process:
-
-- **Expired download links:** Download links are requested fresh for every song. Previously, links cached for the whole
-  session expired during long downloads and failed with HTTP 403.
-- **Failed streams:** An interrupted download fails cleanly instead of crashing TIDAL, and incomplete files are removed
-  rather than left in the library.
-- **Long file names:** Paths are shortened to stay within the Windows path limit and the 255-byte file name limit.
-- **Up-to-date playlists:** Playlists are read fresh when a download starts, so songs added during the current session
-  are included.
-- **Missing metadata:** `.m4a` now always get complete metadata.
-
-### Settings
-
-| Setting           | Description                                                                                                      |
-|-------------------|------------------------------------------------------------------------------------------------------------------|
-| Download quality  | The quality level to download.                                                                                   |
-| Use RealMAX       | Searches for the highest-quality version of each song.                                                           |
-| Default save path | Folder to save into without asking each time. Required for skipping existing songs.                              |
-| Path format       | File name and subfolder layout, for example `{artist}/{album}/{title}`. Default: `{artist} - {album} - {title}`. |
 
 ---
 
-## Collector
+## Office
 
-Collector turns individual songs into complete albums. Select songs you like, a playlist, an artist, or your entire
-collection, choose a target playlist, and Collector adds every album those songs belong to, in full and in album order.
-This makes it easy to build a library of whole records from a playlist of singles, or to keep one playlist containing
-the discographies of the artists you follow.
+Office is a design overhaul for TIDAL. It replaces the parts of the app that could look better. Every part can be turned
+on or off in the settings.
 
-### Where to find it
+<!-- TODO image: the full TIDAL window with all Office redesigns enabled (overview shot) -->
+<p align="center">
+  <img alt="TIDAL with Office" src="resources/Office/office_overview.png">
+</p>
 
-| Source                      | How to start                                                                                                                                    |
-|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
-| Songs, albums and playlists | Right-click and choose **Collect**. Works for a single song or any selection of songs.                                                          |
-| Favorite tracks             | My Collection, *Tracks*: open the **...** menu next to the page title and choose **Collect**.                                                   |
-| An artist's discography     | On the artist page, open the **...** menu and choose **Collect** to add every album, EP and single.                                             |
-| Saved albums                | My Collection, *Albums*: the **...** menu collects every album in your collection.                                                              |
-| Followed artists            | My Collection, *Artists*: the **...** menu collects every album, EP and single of the artists you follow. Untick artists you want to leave out. |
+### Redesigned queue
 
-### How it works
+The play queue shows the current song large on its cover, what's coming up next and what you played recently, all
+tinted in the colors of the current cover.
 
-1. **Choose a target:** Pick one of your playlists from a searchable list. The source playlist itself is not offered.
-2. **Exclude playlists (optional):** Tick playlists whose songs should never be added.
-3. **Collect:** Collector resolves each selected song to its album and adds the album's songs to the target playlist. A
-   progress notification with a cancel button shows how far it is.
+<!-- TODO image: the redesigned queue on the right side -->
+<p align="center">
+  <img alt="Redesigned queue" src="resources/Office/office_queue.png" width="400">
+</p>
 
-### Behavior
+### Redesigned player
 
-- **No duplicates:** Songs already in the target playlist are skipped, and every album is fetched only once, even if
-  several selected songs belong to it.
-- **No AI-generated music:** Songs and albums that TIDAL labels as AI-generated are never collected.
-- **Clean discographies:** Artist releases exclude "appears on" compilations. When a release exists in both a clean and
-  an explicit version, only the explicit version is collected.
-- **No playlist limit:** When the target reaches TIDAL's limit of 20,000 songs, collecting continues in `{name}-2`,
-  `{name}-3` and so on. Missing overflow playlists are created automatically, and songs already in any playlist of the
-  series are not added again. Choosing `{name}-3` as the target continues the same series.
-- **Summary:** When done, a notification reports how many songs from how many albums were added, and to which playlists.
+A cleaner player bar with a slim progress line along the top, the controls in the center and a horizontal volume slider.
+
+<!-- TODO image: the redesigned player bar at the bottom of the window -->
+<p align="center">
+  <img alt="Redesigned player" src="resources/Office/office_player.png">
+</p>
+
+### Redesigned sidebar
+
+The sidebar matches the queue: your playlists with their covers, and an animated equalizer next to the one that's
+playing.
+
+<!-- TODO image: the redesigned sidebar with playlist covers -->
+<p align="center">
+  <img alt="Redesigned sidebar" src="resources/Office/office_sidebar.png" width="300">
+</p>
+
+### Redesigned search bar
+
+Search results open right next to the queue instead of in a separate window.
+
+<!-- TODO image: the redesigned search bar with search results open -->
+<p align="center">
+  <img alt="Redesigned search" src="resources/Office/office_search.png" width="400">
+</p>
+
+### Pin what you need
+
+Keep the sidebar, the navigation bar and the player always visible, even while the full-screen view is open.
+
+<!-- TODO image: the full-screen view with the sidebar, navigation bar and player pinned -->
+<p align="center">
+  <img alt="Pinned sidebar, navigation bar and player" src="resources/Office/office_pinned.png">
+</p>
 
 ---
 
 ## Translator
 
-Translator shows a translation beneath the original lyrics, and which languages the songs of a playlist are in.
+Translator helps you understand songs in languages you don't speak.
 
-### Translated lyrics
+- **Translated lyrics:** A translation appears beneath every line of the lyrics.
+- **Your languages:** Choose the language to translate into, and which languages should never be translated, for example
+  the ones you already speak.
+- **Mixed-language songs:** Songs that switch between languages are supported. Each part is translated on its own.
 
-Open the lyrics of a song and every line gets its translation beneath it. Songs that mix several languages are
-supported: each part is translated, and lines already in your target language stay as they are.
+<!-- TODO image: the lyrics view with translations beneath each line -->
+<p align="center">
+  <img alt="Translated lyrics" src="resources/Translator/translator_lyrics.png" width="500">
+</p>
 
 ### Playlist languages
 
-Playlist pages get a **Languages** button next to TIDAL's *More* button. It shows a chart of the languages in the
-playlist, how many songs are in each language, and how many songs have no lyrics. A language only counts for a song if
-it makes up a noticeable part of it, so a single foreign word doesn't add a language.
+Curious which languages your playlist is in? Click **Languages** on any playlist to get a report showing how its songs
+are spread across languages.
 
-Once a playlist has been analyzed, the button shows a small version of the chart, and opening it again is instant until
-the playlist changes.
-
-### Settings
-
-| Setting         | Description                                                                                         |
-|-----------------|-----------------------------------------------------------------------------------------------------|
-| Target language | The language lyrics are translated into. Defaults to your system language.                          |
-| Never translate | Languages that stay as they are, for example languages you speak. Several can be selected.          |
+<!-- TODO image: the Languages report of a playlist with the language chart -->
+<p align="center">
+  <img alt="Playlist language report" src="resources/Translator/translator_languages.png" width="500">
+</p>
 
 ---
 
