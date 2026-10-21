@@ -320,9 +320,12 @@ export const showPlaylistTools = async (unloads: LunaUnloads, contextMenu: Eleme
 		const parent = node.offsetParent ?? document.body;
 		const from = parent.getBoundingClientRect();
 		const to = slot.getBoundingClientRect();
-		node.style.setProperty("left", `${to.left - from.left + parent.scrollLeft - parent.clientLeft}px`, "important");
+		const style = getComputedStyle(slot);
+		const marginLeft = parseFloat(style.marginLeft) || 0;
+		const marginRight = parseFloat(style.marginRight) || 0;
+		node.style.setProperty("left", `${to.left - marginLeft - from.left + parent.scrollLeft - parent.clientLeft}px`, "important");
 		node.style.setProperty("top", `${to.top - from.top + parent.scrollTop - parent.clientTop}px`, "important");
-		node.style.setProperty("width", `${to.width}px`, "important");
+		node.style.setProperty("width", `${to.width + marginLeft + marginRight}px`, "important");
 	};
 	const hideNative = () => {
 		if (!native) return;
