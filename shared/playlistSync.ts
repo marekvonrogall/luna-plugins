@@ -135,21 +135,31 @@ const tagsOf = (provided: ApiState["provided"], keys: Set<string>): Tag[] => {
 	return tags;
 };
 
-/** Refetches TIDAL's cached API results that contain the playlist */
-const invalidateApiCaches = (uuid: string) => {
+/** Refetches TIDAL's cached API results that contain the playlists (only shown ones cost a request) */
+const invalidateApiCaches = (uuids: string[]) => {
 	const state = redux.store.getState() as unknown as Record<string, ApiState | undefined>;
 	for (const [slice, api] of Object.entries(state)) {
 		if (typeof api?.queries !== "object" || api.queries === null || !("provided" in api)) continue;
 		const keys = new Set<string>();
+		const own = new Set<string>();
 		for (const [key, query] of Object.entries(api.queries)) {
-			if (key.includes(uuid) || json(query?.originalArgs).includes(uuid) || json(query?.data).includes(uuid)) keys.add(key);
+			const args = key + json(query?.originalArgs);
+			if (uuids.some((uuid) => args.includes(uuid))) {
+				own.add(key);
+				keys.add(key);
+			} else if (uuids.some((uuid) => json(query?.data).includes(uuid))) keys.add(key);
 		}
 		if (keys.size === 0) continue;
-		const tags = tagsOf(api.provided, keys);
-		if (tags.length > 0) dispatch(`${slice}/invalidateTags`, tags);
+		const tags = new Map(tagsOf(api.provided, keys).map((tag) => [json(tag), tag]));
+		if (tags.size > 0) dispatch(`${slice}/invalidateTags`, [...tags.values()]);
 		// Untagged ones can't be refetched, drop them instead
-		else for (const queryCacheKey of keys) if (queryCacheKey.includes(uuid)) dispatch(`${slice}/queries/removeQueryResult`, { queryCacheKey });
+		else for (const queryCacheKey of own) dispatch(`${slice}/queries/removeQueryResult`, { queryCacheKey });
 	}
+};
+
+const openPlaylist = () => {
+	const path = redux.store.getState().router?.currentPath ?? window.location.pathname;
+	return /^\/playlist\/([0-9a-f-]{36})/i.exec(path)?.[1];
 };
 
 /** Reloads the playlist's song list in the shown sort. Only "playlists/<uuid>": others like "playlist/<uuid>" fail (404) */
@@ -184,18 +194,25 @@ const pushPlaylist = async (uuid: string) => {
 	dispatch("content/LOAD_PLAYLIST_SUCCESS", { playlist });
 };
 
-const sync = async (uuid: string) => {
-	await pushPlaylist(uuid).catch(() => undefined);
-	invalidateApiCaches(uuid);
-	reloadItems(uuid);
+const pending = new Set<string>();
+let timer: ReturnType<typeof setTimeout> | undefined;
+
+const flush = async () => {
+	timer = undefined;
+	const uuids = [...pending];
+	pending.clear();
+	await Promise.all(uuids.map((uuid) => pushPlaylist(uuid).catch(() => undefined)));
+	invalidateApiCaches(uuids);
+	// Hidden lists load again when opened
+	const open = openPlaylist();
+	if (open !== undefined && uuids.includes(open)) reloadItems(open);
 };
 
-/** Makes TIDAL show a playlist's current songs and track count after an API edit */
+/** Makes TIDAL show a playlist's current songs and track count after an API edit. Edits close together are synced at once */
 export const syncPlaylist = (uuid: string) => {
 	markEdited(uuid);
-	void sync(uuid);
-	// The servers can lag behind an edit
-	setTimeout(() => void sync(uuid), 2000);
+	pending.add(uuid);
+	timer ??= setTimeout(() => void flush(), 300);
 };
 
 /** Makes new playlists show up in TIDAL's sidebar and collection */
