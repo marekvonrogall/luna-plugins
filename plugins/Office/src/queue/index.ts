@@ -743,11 +743,15 @@ const createPanel = (unloads: LunaUnloads) => {
 		if (!raised.has(node)) raised.set(node, node.style.zIndex);
 		node.style.zIndex = String(zIndex + 1);
 	};
-	const mountBlocks = ({ parent, before }: Anchor, zIndex: string) => {
-		if (searchBlock.parentElement !== parent || searchBlock.nextElementSibling !== blockProbe || blockProbe.nextElementSibling !== before) {
-			parent.insertBefore(searchBlock, before);
-			parent.insertBefore(blockProbe, before);
+	/** `floating`: over the full-screen view, one layer above it (and below the header, see layoutHeader) */
+	const mountBlocks = ({ parent, before }: Anchor, zIndex: string, floating: number | undefined) => {
+		if (blockProbe.parentElement !== parent || blockProbe.nextElementSibling !== before) parent.insertBefore(blockProbe, before);
+		if (floating !== undefined) {
+			if (searchBlock.parentElement !== document.body) document.body.appendChild(searchBlock);
+			searchBlock.style.zIndex = String(floating);
+			return;
 		}
+		if (searchBlock.parentElement !== parent || searchBlock.nextElementSibling !== blockProbe) parent.insertBefore(searchBlock, blockProbe);
 		searchBlock.style.zIndex = zIndex;
 	};
 
@@ -926,16 +930,14 @@ const createPanel = (unloads: LunaUnloads) => {
 			if (list) listObserver.observe(list);
 		}
 		fittedList = list ?? undefined;
-		if (!list) return;
+		if (!list) return void popover.style.setProperty("height", "0px", "important");
 		list.style.setProperty("top", `${listTop}px`, "important");
 		list.style.setProperty("height", "auto", "important");
 		list.style.setProperty("bottom", "auto", "important");
-		// In px: a percentage of the shrunk popup would keep the list from growing
 		list.style.setProperty("max-height", `${Math.max(0, maxHeight - listTop)}px`, "important");
 		fitRows(list);
 		const listHeight = list.getBoundingClientRect().height;
-		if (listHeight > 0) popover.style.setProperty("height", `${Math.ceil(listTop + listHeight)}px`, "important");
-		// The hint copies this row's look
+		popover.style.setProperty("height", `${listHeight > 0 ? Math.ceil(listTop + listHeight) : 0}px`, "important");
 		const viewAll = list.querySelector<HTMLElement>('[data-test="view-all-results"]');
 		const viewAllText = viewAll?.querySelector("span");
 		if (viewAll && viewAllText && (viewAll.className !== viewAllClasses.row || viewAllText.className !== viewAllClasses.text)) {
@@ -1205,19 +1207,22 @@ const createPanel = (unloads: LunaUnloads) => {
 		const view = fullscreenView();
 		const closing = view !== undefined && nowPlayingClosing();
 		const fullscreen = closing ? undefined : view;
+		// A pinned navigation bar keeps search usable in the full-screen view
+		const pinned = fullscreen !== undefined && headerPinned();
 		const anchor = headerAnchor();
 		if (anchor && anchor.before) {
 			// Above the sidebar too: in narrow windows the results reach over it
 			const sidebar = document.querySelector('[data-test="main-layout-sidebar-wrapper"]');
 			const layers = [queueLayer(), sidebar ? parseInt(getComputedStyle(sidebar).zIndex) + 1 : NaN].filter((z) => !Number.isNaN(z));
 			const layer = layers.length > 0 ? Math.max(...layers) : FALLBACK_LAYER;
-			raiseAbove(anchor.before, layer);
-			mountBlocks(anchor, String(layer));
+			// Over the full-screen view: right above it; the header (holding the results) stays above that
+			const viewLayer = pinned && fullscreen ? parseInt(getComputedStyle(fullscreen).zIndex) : NaN;
+			const floating = Number.isNaN(viewLayer) ? undefined : viewLayer + 1;
+			raiseAbove(anchor.before, Math.max(layer, floating ?? layer));
+			mountBlocks(anchor, String(layer), floating);
 		}
 		const origin = blockProbe.getBoundingClientRect();
 
-		// A pinned navigation bar keeps search usable in the full-screen view
-		const pinned = fullscreen !== undefined && headerPinned();
 		const searchable = fullscreen === undefined || pinned;
 		layoutFullscreenButtons(view, queueRect !== undefined, queueLeft, width, closing, pinned);
 
@@ -1244,11 +1249,13 @@ const createPanel = (unloads: LunaUnloads) => {
 			// No results yet: the hint
 			const empty = !list || list.height < 1 || popover.firstElementChild?.childElementCount === 0;
 			searchHint.hidden = !empty;
-			// The block starts higher, behind the search bar
-			const hintTop = popoverTop - top + listTop;
+			// Normally the block starts higher, behind the search bar; floating, below it
+			const blockTop = pinned ? popoverTop : top;
+			const hintTop = popoverTop - blockTop + listTop;
 			searchHint.style.top = `${hintTop}px`;
-			const blockBottom = empty ? top + hintTop + searchHint.offsetHeight : list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
-			setBox(searchBlock, searchLeft, top, width, blockBottom - top, origin);
+			const blockBottom = empty ? blockTop + hintTop + searchHint.offsetHeight : list && list.height > 0 ? Math.min(bottom, list.bottom) : bottom;
+			// Floating in <body>, nothing offsets it; measuring it would catch its slide-in
+			setBox(searchBlock, searchLeft, blockTop, width, blockBottom - blockTop, searchBlock.parentElement === document.body ? new DOMRect() : origin);
 		} else unstylePopover();
 		cutQueueOut(searching ? document.querySelector<HTMLElement>(BACKDROP) : null, queueRect && open ? panel.getBoundingClientRect() : undefined);
 	};
