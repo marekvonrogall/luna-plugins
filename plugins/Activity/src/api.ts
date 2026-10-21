@@ -15,8 +15,16 @@ export interface MonetaryInfo {
 	text?: string | null;
 }
 
+export interface ActivityArtist {
+	id: number;
+	name: string;
+	picture?: string | null;
+	/** An album cover TIDAL shows for artists without a picture */
+	selectedAlbumCoverFallback?: string | null;
+}
+
 export interface StreamedArtist {
-	artist: { id: number; name: string; picture?: string | null };
+	artist: ActivityArtist;
 	nrOfStreams: number;
 	royalty?: MonetaryInfo | null;
 }
@@ -152,5 +160,18 @@ export const getTopArtists = (month: Timeline, force = false) =>
 		get<TopArtists>("top-artists", { month: String(month.month), year: String(month.year) }),
 	);
 
-export const artistPicture = (uuid: string | null | undefined, size: 160 | 320 | 480 | 750) =>
-	uuid ? `https://resources.tidal.com/images/${uuid.split("-").join("/")}/${size}x${size}.jpg` : undefined;
+const imageUrl = (uuid: string, size: number) => `https://resources.tidal.com/images/${uuid.split("-").join("/")}/${size}x${size}.jpg`;
+
+/** The artist's picture, or the album cover TIDAL uses instead, like in My Collection */
+export const artistImage = (artist: Pick<ActivityArtist, "picture" | "selectedAlbumCoverFallback"> | null | undefined, large = false) => {
+	if (artist?.picture) return imageUrl(artist.picture, large ? 750 : 320);
+	if (artist?.selectedAlbumCoverFallback) return imageUrl(artist.selectedAlbumCoverFallback, large ? 640 : 320);
+	return undefined;
+};
+
+/** For artists the activity lists without either: looked up like any artist page */
+export const lookUpArtistImage = async (id: number) => {
+	const stored = redux.store.getState().content?.artists?.[id] as ActivityArtist | undefined;
+	if (stored?.picture || stored?.selectedAlbumCoverFallback) return artistImage(stored);
+	return artistImage((await TidalApi.artist(id)) as ActivityArtist | undefined);
+};

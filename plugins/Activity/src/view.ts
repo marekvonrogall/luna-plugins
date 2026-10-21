@@ -1,4 +1,4 @@
-import { artistPicture, getTimeline, getTopArtists, HttpError, isRunningMonth, type Note, type StreamedArtist, type Timeline, type TopArtists } from "./api";
+import { artistImage, getTimeline, getTopArtists, HttpError, isRunningMonth, lookUpArtistImage, type Note, type StreamedArtist, type Timeline, type TopArtists } from "./api";
 import { navigate } from "./navigate";
 import { trace } from "./trace";
 
@@ -92,20 +92,77 @@ export const createView = (onLeave: () => void): View => {
 		load();
 	};
 
+	/** Kept across re-renders, so switching months doesn't jump the row back */
+	let tabScroll = 0;
+
+	const arrow = (direction: -1 | 1) => {
+		const button = h("button", `${P}-tab-arrow`);
+		button.type = "button";
+		button.setAttribute("aria-label", direction < 0 ? "Newer months" : "Older months");
+		button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${direction < 0 ? "M14.5 6l-6 6 6 6" : "M9.5 6l6 6-6 6"}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+		return button;
+	};
+
 	const renderTabs = () => {
+		const bar = h("div", `${P}-tabbar`);
 		const tabs = h("nav", `${P}-tabs`);
 		tabs.setAttribute("role", "tablist");
+		const prev = arrow(-1);
+		const next = arrow(1);
 		const current = shownMonth();
+		let selectedTab: HTMLElement | undefined;
 		for (const month of timeline) {
 			const tab = h("button", `${P}-tab`, monthLabel(month));
 			tab.type = "button";
 			tab.setAttribute("role", "tab");
 			const isSelected = sameMonth(month, current);
+			if (isSelected) selectedTab = tab;
 			tab.setAttribute("aria-selected", String(isSelected));
 			tab.addEventListener("click", () => !isSelected && selectMonth(isRunningMonth(month) ? undefined : month));
 			tabs.append(tab);
 		}
-		return tabs;
+
+		const update = () => {
+			tabScroll = tabs.scrollLeft;
+			const max = tabs.scrollWidth - tabs.clientWidth;
+			const atStart = tabs.scrollLeft <= 1;
+			const atEnd = tabs.scrollLeft >= max - 1;
+			prev.disabled = atStart;
+			next.disabled = atEnd;
+			bar.classList.toggle("is-overflowing", max > 1);
+			bar.classList.toggle("at-start", atStart);
+			bar.classList.toggle("at-end", atEnd);
+		};
+		const page = (direction: -1 | 1) => tabs.scrollBy({ left: direction * tabs.clientWidth * 0.7, behavior: "smooth" });
+		prev.addEventListener("click", () => page(-1));
+		next.addEventListener("click", () => page(1));
+		tabs.addEventListener("scroll", update, { passive: true });
+		// A normal mouse wheel scrolls the months sideways, until the row runs out
+		tabs.addEventListener(
+			"wheel",
+			(e) => {
+				if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+				const max = tabs.scrollWidth - tabs.clientWidth;
+				if ((e.deltaY < 0 && tabs.scrollLeft <= 0) || (e.deltaY > 0 && tabs.scrollLeft >= max)) return;
+				e.preventDefault();
+				tabs.scrollLeft += e.deltaY;
+			},
+			{ passive: false },
+		);
+		new ResizeObserver(update).observe(tabs);
+
+		bar.append(prev, tabs, next);
+		requestAnimationFrame(() => {
+			tabs.scrollLeft = tabScroll;
+			// The chosen month stays in view
+			if (selectedTab !== undefined) {
+				const left = selectedTab.offsetLeft - tabs.offsetLeft;
+				if (left < tabs.scrollLeft || left + selectedTab.offsetWidth > tabs.scrollLeft + tabs.clientWidth)
+					tabs.scrollLeft = left - (tabs.clientWidth - selectedTab.offsetWidth) / 2;
+			}
+			update();
+		});
+		return bar;
 	};
 
 	const renderHero = (data?: TopArtists) => {
@@ -114,7 +171,7 @@ export const createView = (onLeave: () => void): View => {
 		const activity = data?.activity;
 		const images = activity?.images ?? [];
 		const image = images.find((img) => img.orientation === "LANDSCAPE") ?? images[0];
-		const url = image?.url ?? artistPicture(data?.artists?.[0]?.artist.picture, 750);
+		const url = image?.url ?? artistImage(data?.artists?.[0]?.artist, true);
 		if (url) {
 			hero.classList.add("has-art");
 			const img = new Image();
@@ -156,14 +213,20 @@ export const createView = (onLeave: () => void): View => {
 		row.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open()));
 
 		const avatar = h("div", `${P}-avatar`);
-		const picture = artistPicture(entry.artist.picture, 320);
-		if (picture) {
+		const showImage = (url: string | undefined) => {
+			if (!url) return;
 			const img = h("img");
 			img.loading = "lazy";
 			img.alt = "";
-			img.src = picture;
+			img.onerror = () => img.remove();
+			img.src = url;
 			avatar.append(img);
-		} else avatar.textContent = entry.artist.name.slice(0, 1).toUpperCase();
+		};
+		// The initial stays underneath until (or unless) the picture loads
+		avatar.append(h("span", undefined, entry.artist.name.slice(0, 1).toUpperCase()));
+		const picture = artistImage(entry.artist);
+		if (picture) showImage(picture);
+		else lookUpArtistImage(entry.artist.id).then(showImage, () => undefined);
 
 		const main = h("div", `${P}-row-main`);
 		const meter = h("div", `${P}-meter`);

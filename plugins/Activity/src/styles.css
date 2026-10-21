@@ -99,19 +99,68 @@
 }
 
 /* Month tabs, pinned while scrolling */
-.luna-activity-tabs {
+.luna-activity-tabbar {
 	position: sticky;
 	top: 0;
 	z-index: 2;
 	display: flex;
-	gap: 8px;
+	align-items: center;
+	gap: 4px;
 	padding: 12px clamp(16px, 3vw, 40px);
-	overflow-x: auto;
 	background: var(--la-bg);
+}
+.luna-activity-tabs {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	gap: 8px;
+	overflow-x: auto;
 	scrollbar-width: none;
 }
 .luna-activity-tabs::-webkit-scrollbar {
 	display: none;
+}
+/* Fades the cut-off end(s) of the row */
+.luna-activity-tabbar.is-overflowing .luna-activity-tabs {
+	-webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+	mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+}
+.luna-activity-tabbar.is-overflowing.at-start .luna-activity-tabs {
+	-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
+	mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
+}
+.luna-activity-tabbar.is-overflowing.at-end .luna-activity-tabs {
+	-webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px);
+	mask-image: linear-gradient(to right, transparent 0, #000 32px);
+}
+.luna-activity-tab-arrow {
+	display: none;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: var(--la-faint);
+	color: var(--la-text);
+	cursor: pointer;
+	transition: background 0.15s, opacity 0.15s;
+}
+.luna-activity-tabbar.is-overflowing .luna-activity-tab-arrow {
+	display: flex;
+}
+.luna-activity-tab-arrow:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.16);
+}
+.luna-activity-tab-arrow:disabled {
+	opacity: 0.3;
+	cursor: default;
+}
+.luna-activity-tab-arrow svg {
+	width: 18px;
+	height: 18px;
 }
 .luna-activity-tab {
 	flex: none;
@@ -177,6 +226,7 @@
 	justify-content: center;
 	width: 56px;
 	height: 56px;
+	position: relative;
 	border-radius: 50%;
 	overflow: hidden;
 	background: var(--la-faint);
@@ -185,6 +235,8 @@
 	font-weight: 700;
 }
 .luna-activity-avatar img {
+	position: absolute;
+	inset: 0;
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
