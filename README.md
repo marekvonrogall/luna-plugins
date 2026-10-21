@@ -110,6 +110,27 @@ another, so you can rate as you listen. There are two rating modes:
   <img alt="Higher / Lower rating mode" src="resources/Comit%C3%A9/comit%C3%A9_higher-lower.png" width="400">
 </p>
 
+#### Keyboard shortcuts
+
+| Mode           | Key                  | Action                                             |
+|----------------|----------------------|----------------------------------------------------|
+| Stars          | `1` to `5`           | Rate with that many stars                          |
+| Stars          | `Shift` + `1` to `5` | Add a half star, for example `Shift` + `3` for 3.5 |
+| Stars          | `S` or `→`           | Skip the song                                      |
+| Higher / Lower | `←` / `→`            | The left (new) or right (rated) song is better     |
+| Higher / Lower | `↓`                  | Can't decide                                       |
+| Higher / Lower | `A` / `D`            | Listen to the left or right song                   |
+| Higher / Lower | `S`                  | Skip the song                                      |
+| Both           | `Space`              | Play / pause                                       |
+| Both           | `Esc`                | End the session                                    |
+
+### Settings
+
+| Setting                   | Description                                                                                 |
+|---------------------------|---------------------------------------------------------------------------------------------|
+| Rating playlists          | The playlist that holds each rating, one for every half-star step from 0.5 to 5.            |
+| Rating mode: start at (%) | Where each song starts in rating mode, so you can skip intros. 0 starts from the beginning. |
+
 ---
 
 ## Librarian
@@ -133,6 +154,16 @@ songs, an album or a playlist and choose **Download tracks**.
 <p align="center">
   <img alt="Concurrent downloads" src="resources/Librarian/librarian_concurrent-downloads.png">
 </p>
+
+### Settings
+
+| Setting           | Description                                                                                                  |
+|-------------------|--------------------------------------------------------------------------------------------------------------|
+| Download quality  | The quality songs are downloaded in.                                                                         |
+| Use RealMAX       | Looks for the highest-quality version of every song.                                                         |
+| Downloads at once | How many songs download at the same time (1 to 8, default 4). Needs a default save path.                     |
+| Default save path | The folder your library lives in. Downloads go there without asking, and songs you already have are skipped. |
+| Path format       | How files are named and sorted into folders. Default: `{artist}/{album}/{title}`.                            |
 
 ---
 
@@ -193,6 +224,21 @@ Keep the sidebar, the navigation bar and the player always visible, even while t
   <img alt="Pinned sidebar, navigation bar and player" src="resources/Office/office_pinned.png">
 </p>
 
+### Settings
+
+| Setting                 | Description                                                                    | Default |
+|-------------------------|--------------------------------------------------------------------------------|---------|
+| Redesigned play queue   | Replaces TIDAL's play queue with Office's version.                             | On      |
+| Redesigned search       | Replaces TIDAL's search bar with Office's version. Needs the redesigned queue. | On      |
+| Redesigned player bar   | Replaces TIDAL's player bar with Office's version.                             | On      |
+| Redesigned sidebar      | Replaces TIDAL's sidebar with Office's version.                                | On      |
+| Pinned player bar       | Stops the player bar from floating while the full-screen view is open.         | On      |
+| Pinned cover            | Keeps the album cover in the player bar while the full-screen view is open.    | On      |
+| Pinned sidebar          | Always keeps the sidebar visible.                                              | On      |
+| Pinned navigation bar   | Always keeps the navigation bar visible.                                       | On      |
+| Queue background tint   | Colors the queue's background with the cover of the current song.              | On      |
+| Sidebar background tint | Colors the sidebar's background with the cover of the current song.            | Off     |
+
 ---
 
 ## Translator
@@ -218,6 +264,13 @@ are spread across languages.
 <p align="center">
   <img alt="Playlist language report" src="resources/Translator/translator_languages.png" width="500">
 </p>
+
+### Settings
+
+| Setting         | Description                                                                                    |
+|-----------------|------------------------------------------------------------------------------------------------|
+| Target language | The language the lyrics are translated into. Defaults to your system language.                 |
+| Never translate | Languages that are never translated, for example the ones you speak. Pick as many as you like. |
 
 ---
 
