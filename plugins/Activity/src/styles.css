@@ -3,7 +3,6 @@
 	--la-text: #fff;
 	--la-muted: rgba(255, 255, 255, 0.6);
 	--la-faint: rgba(255, 255, 255, 0.08);
-	--la-accent: #33ffee;
 	position: fixed;
 	z-index: 50;
 	display: flex;
@@ -291,8 +290,15 @@
 	border-radius: 2px;
 	background: rgba(255, 255, 255, 0.45);
 }
-.luna-activity-row:first-child .luna-activity-meter-fill {
-	background: var(--la-accent);
+/* Podium: TIDAL yellow (as in Comité), silver, bronze */
+.luna-activity-row:nth-child(1) .luna-activity-meter-fill {
+	background: #ffd432;
+}
+.luna-activity-row:nth-child(2) .luna-activity-meter-fill {
+	background: #c4c9d1;
+}
+.luna-activity-row:nth-child(3) .luna-activity-meter-fill {
+	background: #cd8a4f;
 }
 .luna-activity-count {
 	display: grid;

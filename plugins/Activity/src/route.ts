@@ -15,16 +15,19 @@ export const setupRoute = (unloads: LunaUnloads) => {
 	let openedAt = 0;
 
 	const open = () => {
-		view ??= createView(() => {
-			openedAt = 0;
-			close();
-		});
+		view ??= createView(() => (openedAt = 0));
 		view.show();
 		link.setActive(true);
 	};
 	const close = () => {
 		view?.hide();
 		link.setActive(false);
+	};
+	/** Hidden once the next page has replaced TIDAL's "page not found" for our path */
+	const leave = (frames = 0) => {
+		if (currentPath() === ROUTE) return open();
+		if (frames < 30 && document.querySelector('[data-test="page-not-found"]')) return void requestAnimationFrame(() => leave(frames + 1));
+		close();
 	};
 
 	const link = setupSidebarLink(unloads, ROUTE, () => {
@@ -40,7 +43,7 @@ export const setupRoute = (unloads: LunaUnloads) => {
 			openedAt = 0;
 			return;
 		}
-		close();
+		leave();
 	};
 
 	// The path updates after the action
@@ -54,7 +57,7 @@ export const setupRoute = (unloads: LunaUnloads) => {
 		const anchor = (e.target as Element | null)?.closest?.("a[href]");
 		if (anchor === null || anchor === undefined || anchor.hasAttribute("data-activity-link") || view.contains(anchor)) return;
 		openedAt = 0;
-		close();
+		leave();
 	};
 	document.addEventListener("click", onClick, true);
 
